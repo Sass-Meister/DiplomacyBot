@@ -231,16 +231,6 @@ def clense(s: str) -> str:
 
 
 def identical_lists(l1: list, l2: list) -> bool:
-    # for item in l1:
-    #     if item not in l2:
-    #         return False
-    #
-    # for item in l2:
-    #     if item not in l1:
-    #         return False
-    #
-    # return True
-
     if len(l1) != len(l2):
         return False
 
@@ -249,6 +239,22 @@ def identical_lists(l1: list, l2: list) -> bool:
             return False
 
     return True
+
+
+def count_support(audit, commandlist: list) -> int:
+    rtr = 0
+
+    for command in commandlist:
+        if audit is command:
+            continue
+
+        if command.getAction() == ActionEnum.SUPPORT and command.getTargetLocation() == audit.getCurrentLocation():
+            rtr = rtr + 1
+
+    return rtr
+
+
+
 
 
 # _____/\\\\\\\\\_____/\\\\\\\\\\\\_____/\\\\\\\\\\\\\\\_____/\\\\\\\\\\\_________
