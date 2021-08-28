@@ -240,7 +240,7 @@ class Trios(unittest.TestCase):
 
         self.assertTrue(self.e.state == State({FRANCE: {HOL: ARMY},
                                                GERMANY: {RUH: ARMY},
-                                               ITALY: {BEL, ARMY}}))
+                                               ITALY: {BEL: ARMY}}))
 
 
 if __name__ == '__main__':
