@@ -44,6 +44,9 @@ class SimpleMove(RuleBase):  # literally untested
         return self
 
 
+rules = [SimpleMove]
+
+
 class Engine:
     def __init__(self, players: int):
         startpos = {CountryEnum.AUSTRIA: {LocEnum.VIE: UnitEnum.ARMY,
@@ -112,48 +115,35 @@ class Engine:
     # Move: Under Construction
     # Support: TBD
     # Convoy: TBD
-    def update_state(self, commands: list):
-        self.check_commands(commands)
-
+    def update_state(self, commands: list[Command]):
         if len(commands) == 0:
             return
 
-        movers = []
-        holders = []
+        self.check_commands(commands)
+
+        newcommands = []
+
+        for rule in rules:
+            for command in commands.copy():
+                if command not in commands:
+                    continue  # This allows commands to be changed while iterating though it
+
+                for old, fixed in rule(command, commands):
+                    newcommands.append(fixed)
+
+                    commands.remove(old)
 
         for command in commands:
-            if command.getAction() == ActionEnum.HOLD:
-                holders.append(command)
+            if command.getAction() == ActionEnum.MOVE:
+                raise CommandConflict("Unresolved move command")
 
-            elif command.getAction() == ActionEnum.MOVE:
-                movers.append(command)
-
-        fixed = []
-
-        while len(movers) > 0:
-            underreview = movers[0]
-            conflict = None
-
-            # Find the unit and its command that conflict with the current one under review
-            for command in commands:
-                if underreview.getTargetLocation() == command.getCurrentLocation() and command is not underreview:
-                    conflict = command
-                    break
-
-            if conflict is None:
-                fixed.append(movers.pop(0))
-                continue
-
-            # Settle conflicts here
-            raise Exception("Too stupid to handle conflicts")
-
-        fixed = fixed + holders
+        newcommands = newcommands + commands # rules only fix moves and convoys
 
         # At this point all commands are now in fixed and are ready to construct a new state
 
         startpos = dict()  # First construct the new startpos
 
-        for command in fixed:
+        for command in newcommands:
             if command.getAuthor() not in startpos:
                 startpos[command.getAuthor()] = dict()
 
