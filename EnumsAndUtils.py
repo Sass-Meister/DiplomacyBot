@@ -54,6 +54,10 @@ class CommandConflict(Exception):
 class RuleCheckException(Exception):
     pass
 
+
+class RetreatDetected(Exception):
+    pass
+
 # __/\\\\\\\\\\\\\\\__/\\\\\_____/\\\__/\\\________/\\\__/\\\\____________/\\\\_____/\\\\\\\\\\\_________
 #  _\/\\\///////////__\/\\\\\\___\/\\\_\/\\\_______\/\\\_\/\\\\\\________/\\\\\\___/\\\/////////\\\_______
 #   _\/\\\_____________\/\\\/\\\__\/\\\_\/\\\_______\/\\\_\/\\\//\\\____/\\\//\\\__\//\\\______\///________
@@ -212,51 +216,6 @@ class ActionEnum(Enum):
         return str(self.name).capitalize()
 
 
-# __/\\\________/\\\__/\\\\\\\\\\\\\\\__/\\\\\\\\\\\__/\\\_________________/\\\\\\\\\\\_________
-#  _\/\\\_______\/\\\_\///////\\\/////__\/////\\\///__\/\\\_______________/\\\/////////\\\_______
-#   _\/\\\_______\/\\\_______\/\\\___________\/\\\_____\/\\\______________\//\\\______\///________
-#    _\/\\\_______\/\\\_______\/\\\___________\/\\\_____\/\\\_______________\////\\\_______________
-#     _\/\\\_______\/\\\_______\/\\\___________\/\\\_____\/\\\__________________\////\\\_______/\\\_
-#      _\/\\\_______\/\\\_______\/\\\___________\/\\\_____\/\\\_____________________\////\\\___\///__
-#       _\//\\\______/\\\________\/\\\___________\/\\\_____\/\\\______________/\\\______\//\\\________
-#        __\///\\\\\\\\\/_________\/\\\________/\\\\\\\\\\\_\/\\\\\\\\\\\\\\\_\///\\\\\\\\\\\/____/\\\_
-#         ____\/////////___________\///________\///////////__\///////////////____\///////////_____\///__
-
-
-def clense(s: str) -> str:
-    for c in [' ', '\t', '\n']:
-        s = s.replace(c, '')
-
-    return s
-
-
-def identical_lists(l1: list, l2: list) -> bool:
-    if len(l1) != len(l2):
-        return False
-
-    for item in l1:
-        if item not in l2:
-            return False
-
-    return True
-
-
-def count_support(audit, commandlist: list) -> int:
-    rtr = 0
-
-    for command in commandlist:
-        if audit is command:
-            continue
-
-        if command.getAction() == ActionEnum.SUPPORT and command.getTargetLocation() == audit.getCurrentLocation():
-            rtr = rtr + 1
-
-    return rtr
-
-
-
-
-
 # _____/\\\\\\\\\_____/\\\\\\\\\\\\_____/\\\\\\\\\\\\\\\_____/\\\\\\\\\\\_________
 #  ___/\\\\\\\\\\\\\__\/\\\////////\\\__\///////\\\/////____/\\\/////////\\\_______
 #   __/\\\/////////\\\_\/\\\______\//\\\_______\/\\\________\//\\\______\///________
@@ -333,7 +292,7 @@ class Location:
 
 
 class Command:
-    def __init__(self, author: CountryEnum = None, unit: LocEnum = None, action: ActionEnum = None,
+    def __init__(self, author: CountryEnum, unit: LocEnum, action: ActionEnum,
                  location: LocEnum = None, dropoff: LocEnum = None):
         self.unit = unit  # Used in every command
         self.action = action  # Used in every command
@@ -347,7 +306,14 @@ class Command:
         if type(self) != type(other):
             return False
 
-        return self.unit == other.unit and self.action == other.action and self.author == other.author and self.location == other.location and self.dropoff == other.dropoff
+        for attr in ["unit", "action", "author", "location", "dropoff"]:
+            if not hasattr(other, attr):
+                return False
+
+            if getattr(self, attr) != getattr(other, attr):
+                return False
+
+        return True
 
     def __ne__(self, other) -> bool:
         return not self.__eq__(other)
@@ -412,6 +378,68 @@ class Command:
                 if type(self.dropoff) != LocEnum:
                     raise InvariantError("Bad Unit2 type")
 
+# __/\\\________/\\\__/\\\\\\\\\\\\\\\__/\\\\\\\\\\\__/\\\_________________/\\\\\\\\\\\_________
+#  _\/\\\_______\/\\\_\///////\\\/////__\/////\\\///__\/\\\_______________/\\\/////////\\\_______
+#   _\/\\\_______\/\\\_______\/\\\___________\/\\\_____\/\\\______________\//\\\______\///________
+#    _\/\\\_______\/\\\_______\/\\\___________\/\\\_____\/\\\_______________\////\\\_______________
+#     _\/\\\_______\/\\\_______\/\\\___________\/\\\_____\/\\\__________________\////\\\_______/\\\_
+#      _\/\\\_______\/\\\_______\/\\\___________\/\\\_____\/\\\_____________________\////\\\___\///__
+#       _\//\\\______/\\\________\/\\\___________\/\\\_____\/\\\______________/\\\______\//\\\________
+#        __\///\\\\\\\\\/_________\/\\\________/\\\\\\\\\\\_\/\\\\\\\\\\\\\\\_\///\\\\\\\\\\\/____/\\\_
+#         ____\/////////___________\///________\///////////__\///////////////____\///////////_____\///__
+
+
+def clense(s: str) -> str:
+    for c in [' ', '\t', '\n']:
+        s = s.replace(c, '')
+
+    return s
+
+
+def identical_lists(l1: list, l2: list) -> bool:
+    if len(l1) != len(l2):
+        return False
+
+    for item in l1:
+        if item not in l2:
+            return False
+
+    return True
+
+
+def count_support(audit, commandlist: list[Command]) -> int:
+    rtr = 0
+
+    for command in commandlist:
+        if audit is command:
+            continue
+
+        if command.getAction() == ActionEnum.SUPPORT and command.getTargetLocation() == audit.getCurrentLocation():
+            rtr = rtr + 1
+
+    return rtr
+
+
+def sort_commands(sort: str, commands: list[Command]) -> dict:
+    if len(commands) == 0:
+        return dict()
+
+    if not hasattr(commands[0], sort):
+        raise Exception("Invalid Sort")
+
+    rtr = dict()
+
+    for command in commands:
+        key = getattr(command, sort)
+
+        if key not in rtr:
+            rtr[key] = list()
+
+        rtr[key].append(command)
+
+    return rtr
+
+
 # __/\\\\\\\\\\\__/\\\\\_____/\\\__/\\\\\\\\\\\\\\\__/\\\\\\\\\\\\\\\____/\\\\\\\\\______/\\\\\\\\\\\\\\\_____/\\\\\\\\\___________/\\\\\\\\\__/\\\\\\\\\\\\\\\_____/\\\\\\\\\\\_________
 #  _\/////\\\///__\/\\\\\\___\/\\\_\///////\\\/////__\/\\\///////////___/\\\///////\\\___\/\\\///////////____/\\\\\\\\\\\\\______/\\\////////__\/\\\///////////____/\\\/////////\\\_______
 #   _____\/\\\_____\/\\\/\\\__\/\\\_______\/\\\_______\/\\\_____________\/\\\_____\/\\\___\/\\\______________/\\\/////////\\\___/\\\/___________\/\\\______________\//\\\______\///________
@@ -430,13 +458,16 @@ class RuleBase:
         self.fixed = dict()
         self.fix_it = None  # fixed_iterator
 
-    def __iter__(self):
+    def attempt_resolve(self, audit: Command, commands: list[Command]) -> dict[Command: Command]:
         pass
 
-    def __next__(self) -> (Command, Command):
-        if self.fix_it is None:
-            self.fix_it = iter(self.fixed)
+    def __iter__(self):
+        self.fixed = self.attempt_resolve(self.audit, self.commands)
+        self.fix_it = iter(self.fixed)
 
+        return self
+
+    def __next__(self) -> (Command, Command):
         next = self.fix_it.__next__()
 
         return next, self.fixed[next]
