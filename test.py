@@ -22,8 +22,9 @@
 # TODO:        __________\///___________\///___________\///__\///___________\///___________\///___________
 
 import unittest
+
 from EnumsAndUtils import *
-from engine import Engine
+from engine import Engine, ResolveMove
 from state import State
 from map import Map
 
@@ -55,12 +56,51 @@ BAR = LocEnum.BAR
 RUH = LocEnum.RUH
 SWE = LocEnum.SWE
 DEN = LocEnum.DEN
+GOL = LocEnum.GOL
+TYN = LocEnum.TYN
+ROM = LocEnum.ROM
+NAP = LocEnum.NAP
+BOH = LocEnum.BOH
+TYR = LocEnum.TYR
+MUN = LocEnum.MUN
+SIL = LocEnum.SIL
+BER = LocEnum.BER
+WAR = LocEnum.WAR
+PRU = LocEnum.PRU
+PIC = LocEnum.PIC
+BUR = LocEnum.BUR
+GAS = LocEnum.GAS
+BRE = LocEnum.BRE
+PAR = LocEnum.PAR
+IRI = LocEnum.IRI
+WAL = LocEnum.WAL
+LON = LocEnum.LON
+ENG = LocEnum.ENG
 
 ARMY = UnitEnum.ARMY
 FLEET = UnitEnum.FLEET
 
 HOLD = ActionEnum.HOLD
 MOVE = ActionEnum.MOVE
+SUPPORT = ActionEnum.SUPPORT
+
+
+def state_from_commands(commands: list[Command]) -> State:
+    m = Map()
+    startpos = dict()
+
+    for command in commands:
+        author = command.getAuthor()
+
+        if author not in startpos:
+            startpos[author] = dict()
+
+        loctypeset = {m.getLocation(command.getCurrentLocation()).loctype,
+                      None if command.getTargetLocation() is None else m.getLocation(command.getTargetLocation()).loctype}
+
+        startpos[author][command.getCurrentLocation()] = FLEET if LocTypeEnum.WATER in loctypeset else ARMY
+
+    return State(startpos)
 
 
 class MapTests(unittest.TestCase):
@@ -132,6 +172,153 @@ class MapTests(unittest.TestCase):
                 self.assertTrue(self.e.state == State({FRANCE: {end: unit}}))
 
 
+# class ResolverTests(unittest.TestCase):
+#     def setUp(self) -> None:
+#         self.resolve_move = ResolveMove(Command(FRANCE, NTH, HOLD), []).resolvable_move
+#
+#     def testMove1(self) -> None:
+#         locations = [BEL, NTH, HOL, NRG, BUL, SPA, STP, WES, MID, AEG, BLA, BOT, BAR, RUH, SWE, DEN]
+#         loop = []
+#
+#         for i in range(len(locations) - 1):
+#             loop.append(Command(FRANCE, locations[i], MOVE, locations[i + 1]))
+#
+#         loop.append(Command(FRANCE, locations[len(locations) - 1], MOVE, locations[0]))
+#
+#         for command in loop:
+#             self.assertTrue(self.resolvable_move(command, loop))
+#
+#     def testMove2(self) -> None:
+#         locations = [BEL, NTH, HOL, NRG, BUL, SPA, STP, WES, MID, AEG, BLA, BOT, BAR, RUH, SWE, DEN]
+#         loop = []
+#
+#         for i in range(len(locations) - 1):
+#             loop.append(Command(FRANCE, locations[i], MOVE, locations[i + 1]))
+#
+#         loop.append(Command(FRANCE, locations[len(locations) - 1], MOVE, locations[0]))
+#
+#         loop.append(Command(FRANCE, SPA_NC, MOVE, locations[0])) # Conflict moving to the first location
+#
+#         for command in loop:
+#             self.assertFalse(resolvable_move(command, loop))
+#
+#     def testMove3(self) -> None:
+#         locations = [BEL, NTH, HOL, NRG, BUL, SPA, STP, WES, MID, AEG, BLA, BOT, BAR, RUH, SWE, DEN]
+#         loop = []
+#
+#         for i in range(len(locations) - 1):
+#             loop.append(Command(FRANCE, locations[i], MOVE, locations[i + 1]))
+#
+#         loop.append(Command(FRANCE, locations[-1], MOVE, locations[0]))
+#
+#         loop.append(Command(FRANCE, SPA_NC, MOVE, locations[0]))  # Conflict moving to the first location
+#         loop.append(Command(FRANCE, SPA_SC, SUPPORT, locations[0]))  # Support the original move to the first loc
+#
+#         for command in loop:
+#             if command.getAction() != MOVE:
+#                 continue
+#
+#             if command == loop[-2]:
+#                 self.assertFalse(resolvable_move(command, loop))
+#
+#             else:
+#                 self.assertTrue(resolvable_move(command, loop))
+#
+#     def testMoveManyLoops(self):
+#         locations = [BEL, NTH, HOL, NRG, BUL, SPA, STP, WES, MID, AEG, BLA, BOT, BAR, RUH, SWE, DEN]
+#
+#         for size in range(2, len(locations)):
+#             loop = []
+#
+#             for i in range(size):
+#                 loop.append(Command(FRANCE, locations[i], MOVE, locations[i+1]))
+#
+#             loop.append(Command(FRANCE, locations[size], MOVE, locations[0]))
+#
+#             for command in loop:
+#                 if command.getAction() == MOVE:
+#                     self.assertTrue(resolvable_move(command, loop))
+#
+#     def testBumperCars(self):
+#         commands = [Command(FRANCE, BEL, MOVE, NTH),
+#                     Command(FRANCE, NTH, MOVE, BEL)]
+#
+#         for command in commands:
+#             self.assertFalse(resolvable_move(command, commands))
+#
+#     def testRetreatDetection(self):
+#             commands = [Command(FRANCE, BEL, MOVE, NTH),
+#                         Command(FRANCE, HOL, SUPPORT, BEL),
+#                         Command(FRANCE, NTH, MOVE, DEN)]
+#
+#             self.assertTrue(resolvable_move(commands[0], commands))
+#
+#             with self.assertRaises(RetreatDetected):
+#                 resolvable_move(commands[2], commands)
+
+
+class Diagrams(unittest.TestCase):
+    def setUp(self) -> None:
+        self.e = Engine(7)
+
+    def testDiagram1(self):
+        for loc in [PIC, BUR, GAS, BRE]:
+            command = [Command(FRANCE, PAR, MOVE, loc)]
+
+            self.e.state = State({FRANCE: {PAR: ARMY}})
+
+            self.e.update_state(command)
+
+            self.assertTrue(self.e.state == State({FRANCE: {loc: ARMY}}))
+
+    def testDiagram2(self):
+        for loc in [IRI, WAL, LON, NTH, BEL, PIC, BRE, MID]:
+            command = [Command(FRANCE, ENG, MOVE, loc)]
+
+            self.e.state = State({FRANCE: {ENG: FLEET}})
+
+            self.e.update_state(command)
+
+            self.assertTrue(self.e.state == State({FRANCE: {loc: FLEET}}))
+
+    def testDiagram10(self):
+        commands = [Command(FRANCE, GOL, MOVE, TYN),
+                    Command(FRANCE, WES, SUPPORT, GOL),
+                    Command(GERMANY, NAP, MOVE, TYN),
+                    Command(GERMANY, ROM, SUPPORT, NAP)]
+
+        self.e.state = state_from_commands(commands)
+
+        self.e.update_state(commands)
+
+        self.assertTrue(self.e.state == state_from_commands(commands))
+
+    def testDiagram11(self):
+        commands = [Command(FRANCE, GOL, MOVE, TYN),
+                    Command(FRANCE, WES, SUPPORT, GOL),
+                    Command(GERMANY, TYN, HOLD),
+                    Command(GERMANY, ROM, SUPPORT, NAP)]
+
+        self.e.state = state_from_commands(commands)
+
+        self.e.update_state(commands)
+
+        self.assertTrue(self.e.state == state_from_commands(commands))
+
+    def testDiagram12(self):
+        commands = [Command(FRANCE, BOH, MOVE, MUN),
+                    Command(FRANCE, TYR, SUPPORT, BOH),
+                    Command(GERMANY, MUN, MOVE, SIL),
+                    Command(GERMANY, BER, SUPPORT, MUN),
+                    Command(ITALY, WAR, MOVE, SIL),
+                    Command(ITALY, PRU, SUPPORT, WAR)]
+
+        self.e.state = state_from_commands(commands)
+
+        with self.assertRaises(RetreatDetected):
+            self.e.update_state(commands)
+
+
 class Singles(unittest.TestCase):
     def setUp(self):
         self.e = Engine(1)
@@ -188,15 +375,14 @@ class Duos(unittest.TestCase):
         self.e = Engine(2)
 
     def testBumperCars(self):
-        self.e.state = State({FRANCE: {BEL: ARMY},
-                              GERMANY: {HOL: ARMY}})
+        self.e.state = State({FRANCE: {BEL: ARMY}, GERMANY: {HOL: ARMY}})
 
         commands = [Command(FRANCE, BEL, MOVE, HOL),
                     Command(GERMANY, HOL, MOVE, BEL)]
 
         self.e.update_state(commands)
 
-        self.assertTrue(self.e.state == State({FRANCE: {NTH: FLEET}}))
+        self.assertTrue(self.e.state == State({FRANCE: {BEL: ARMY}, GERMANY: {HOL: ARMY}}))
 
     def testKOTH(self):
         self.e.state = State({FRANCE: {HOL: ARMY}, GERMANY: {RUH: ARMY}})
