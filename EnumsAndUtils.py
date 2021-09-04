@@ -19,6 +19,8 @@
 # iterating though a truth table?) could be created, iteration might be clearer. I don't particularly find construction
 # to be too bad but if something better could be thought up.
 
+# Add a field for command to serve as a retreat location. This wouldn't be required to be filled out until a retreat is detected
+
 # TODO:____/\\\________/\\\__/\\\__________________/\\\________/\\\__/\\\__________________/\\\________/\\\_
 # TODO: ___/\\/\\_____/\\\/__\///\\\_______________/\\/\\_____/\\\/__\///\\\_______________/\\/\\_____/\\\/__
 # TODO:  __\//\\\____/\\\/______\///\\\____________\//\\\____/\\\/______\///\\\____________\//\\\____/\\\/____
@@ -293,12 +295,13 @@ class Location:
 
 class Command:
     def __init__(self, author: CountryEnum, unit: LocEnum, action: ActionEnum,
-                 location: LocEnum = None, dropoff: LocEnum = None):
+                 location: LocEnum = None, dropoff: LocEnum = None, retreat: LocEnum = None):
         self.unit = unit  # Used in every command
         self.action = action  # Used in every command
         self.author = author  # Who wrote the command?
         self.location = location  # Used for move, convoy, and support
         self.dropoff = dropoff  # Used for just convoy
+        self.retreat = retreat  # Where to go when retreating
 
         self.validate()
 
@@ -306,7 +309,7 @@ class Command:
         if type(self) != type(other):
             return False
 
-        for attr in ["unit", "action", "author", "location", "dropoff"]:
+        for attr in ["unit", "action", "author", "location", "dropoff", "retreat"]:
             if not hasattr(other, attr):
                 return False
 
@@ -332,6 +335,9 @@ class Command:
 
     def getConvoyDropoff(self) -> LocEnum:
         return self.dropoff
+
+    def getRetreatLocation(self):
+        return self.retreat
 
     def __str__(self):
         rtr = "%s %s %s" % (self.author, self.unit, self.action)
@@ -377,6 +383,9 @@ class Command:
 
                 if type(self.dropoff) != LocEnum:
                     raise InvariantError("Bad Unit2 type")
+
+        if self.retreat is not None and type(self.retreat) != LocEnum:
+            raise InvariantError("Retreat is of the wrong type")
 
 # __/\\\________/\\\__/\\\\\\\\\\\\\\\__/\\\\\\\\\\\__/\\\_________________/\\\\\\\\\\\_________
 #  _\/\\\_______\/\\\_\///////\\\/////__\/////\\\///__\/\\\_______________/\\\/////////\\\_______
@@ -440,6 +449,10 @@ def sort_commands(sort: str, commands: list[Command]) -> dict:
     return rtr
 
 
+def turn_to_hold(command: Command) -> Command:
+    return Command(command.getAuthor(), command.getCurrentLocation(), ActionEnum.HOLD)
+
+
 # __/\\\\\\\\\\\__/\\\\\_____/\\\__/\\\\\\\\\\\\\\\__/\\\\\\\\\\\\\\\____/\\\\\\\\\______/\\\\\\\\\\\\\\\_____/\\\\\\\\\___________/\\\\\\\\\__/\\\\\\\\\\\\\\\_____/\\\\\\\\\\\_________
 #  _\/////\\\///__\/\\\\\\___\/\\\_\///////\\\/////__\/\\\///////////___/\\\///////\\\___\/\\\///////////____/\\\\\\\\\\\\\______/\\\////////__\/\\\///////////____/\\\/////////\\\_______
 #   _____\/\\\_____\/\\\/\\\__\/\\\_______\/\\\_______\/\\\_____________\/\\\_____\/\\\___\/\\\______________/\\\/////////\\\___/\\\/___________\/\\\______________\//\\\______\///________
@@ -452,17 +465,16 @@ def sort_commands(sort: str, commands: list[Command]) -> dict:
 
 
 class RuleBase:
-    def __init__(self, audit: Command, commands: list[Command]):
-        self.audit = audit
+    def __init__(self, commands: list[Command]):
         self.commands = commands
         self.fixed = dict()
         self.fix_it = None  # fixed_iterator
 
-    def attempt_resolve(self, audit: Command, commands: list[Command]) -> dict[Command: Command]:
+    def attempt_resolve(self, commands: list[Command]) -> dict[Command: Command]:
         pass
 
     def __iter__(self):
-        self.fixed = self.attempt_resolve(self.audit, self.commands)
+        self.fixed = self.attempt_resolve(self.commands)
         self.fix_it = iter(self.fixed)
 
         return self
@@ -471,5 +483,8 @@ class RuleBase:
         next = self.fix_it.__next__()
 
         return next, self.fixed[next]
+
+    def __str__(self):
+        return str(type(self))
 
 
