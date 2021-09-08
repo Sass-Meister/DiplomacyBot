@@ -420,25 +420,22 @@ def count_support(audit, commandlist: list[Command]) -> int:
     rtr = 0
 
     for command in commandlist:
-        if audit is command:
-            continue
-
-        if command.getAction() == ActionEnum.SUPPORT and command.getTargetLocation() == audit.getCurrentLocation():
+        if audit is not command and command.getAction() == ActionEnum.SUPPORT and command.getTargetLocation() == audit.getCurrentLocation():
             rtr = rtr + 1
 
     return rtr
 
 
-def sort_commands(sort: str, commands: list[Command]) -> dict:
+def sort_commands(sort: str, commands: list[Command]) -> dict[LocEnum: list[Command]]:
     if len(commands) == 0:
         return dict()
-
-    if not hasattr(commands[0], sort):
-        raise Exception("Invalid Sort")
 
     rtr = dict()
 
     for command in commands:
+        if not hasattr(command, sort):
+            raise Exception("Invalid Sort")
+
         key = getattr(command, sort)
 
         if key not in rtr:
@@ -450,7 +447,7 @@ def sort_commands(sort: str, commands: list[Command]) -> dict:
 
 
 def turn_to_hold(command: Command) -> Command:
-    return Command(command.getAuthor(), command.getCurrentLocation(), ActionEnum.HOLD)
+    return Command(command.getAuthor(), command.getCurrentLocation(), ActionEnum.HOLD, retreat=command.retreat)
 
 
 # __/\\\\\\\\\\\__/\\\\\_____/\\\__/\\\\\\\\\\\\\\\__/\\\\\\\\\\\\\\\____/\\\\\\\\\______/\\\\\\\\\\\\\\\_____/\\\\\\\\\___________/\\\\\\\\\__/\\\\\\\\\\\\\\\_____/\\\\\\\\\\\_________
