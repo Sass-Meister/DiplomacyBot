@@ -11,6 +11,8 @@
 # Implement the playbook of the rulebook
 # Random tests are cool
 
+# Create a command to just do retreats
+
 # TODO:___________________________________________________________________________________________
 # TODO: ___________/\\\___________/\\\___________/\\\__/\\\___________/\\\___________/\\\__________
 # TODO:  ________/\\\//_________/\\\//_________/\\\//__\////\\\_______\////\\\_______\////\\\_______
@@ -22,11 +24,12 @@
 # TODO:        __________\///___________\///___________\///__\///___________\///___________\///___________
 
 import unittest
+import random
 
 from EnumsAndUtils import *
 from engine import Engine, ResolveMove
 from state import State
-from map import Map
+from map import getLocation
 
 FRANCE = CountryEnum.FRANCE
 GERMANY = CountryEnum.GERMANY
@@ -95,29 +98,9 @@ MOVE = ActionEnum.MOVE
 SUPPORT = ActionEnum.SUPPORT
 
 
-# Only uses fleets when a move involves a water tile, otherwise uses an army.
-def state_from_commands(commands: list[Command]) -> State:
-    m = Map()
-    startpos = dict()
-
-    for command in commands:
-        author = command.getAuthor()
-
-        if author not in startpos:
-            startpos[author] = dict()
-
-        loctypeset = {m.getLocation(command.getCurrentLocation()).loctype,
-                      None if command.getTargetLocation() is None else m.getLocation(command.getTargetLocation()).loctype}
-
-        startpos[author][command.getCurrentLocation()] = FLEET if LocTypeEnum.WATER in loctypeset else ARMY
-
-    return State(startpos)
-
-
 class MapTests(unittest.TestCase):
     def setUp(self):
         self.e = Engine(1)
-        self.m = Map()
 
     def testBulgariaCoast1(self):  # See: Specific Movement Clarifications
         self.e.state = State({FRANCE: {AEG: FLEET}})
@@ -184,176 +167,138 @@ class MapTests(unittest.TestCase):
 
 
 class Diagrams(unittest.TestCase):  # https://media.wizards.com/2015/downloads/ah/diplomacy_rules.pdf
-    # commands: the commands to run
-    # final_state: The final stat expected after the commands have been run. Leave blank if you're not expecting change
+    # Given a list of commands, a state will be returned which will allow the commands to be run against it. Fleets are
+    # only placed on water, armies for coastal and inland.
     #
-    # The state is generated using state_from_commands
-    def diagramRunner(self, commands: list[Command], final_state: State = None):
-        self.e.state = state_from_commands(commands)
+    # commands: A list of commands to generate the state from
+    def state_from_commands(self, commands: list[Command]) -> State:
+        startpos = dict()
+
+        for command in commands:
+            author = command.getAuthor()
+
+            if author not in startpos:
+                startpos[author] = dict()
+
+            loctypeset = {getLocation(command.getCurrentLocation()).loctype,
+                          None if command.getTargetLocation() is None else getLocation(
+                              command.getTargetLocation()).loctype}
+
+            startpos[author][command.getCurrentLocation()] = FLEET if LocTypeEnum.WATER in loctypeset else ARMY
+
+        return State(startpos)
+
+    # Runs a list of commands along with a base state and test if the expected final state is reached.
+    #
+    # commands: the commands to run
+    # final_state: The final stat expected after the commands have been run. If None, state_from_commands is used.
+    # base_state: The base state for the commands to be tested against. If None, state_from_commands is used.
+    def isStateUpdated(self, commands: list[Command], final_state: State = None, base_state: State = None):
+        if base_state is None:
+            base_state = self.state_from_commands(commands)
+
+        if final_state is None:
+            final_state = self.state_from_commands(commands)
+
+        self.e.state = base_state
 
         self.e.update_state(commands)
 
         self.assertTrue(self.e.state == final_state)
 
+    # Runs a list of commands along with a base state to test if the provided exception is raised.
+    #
+    # test_exception: The exception expected to be raised when update_state is ran with these commands
+    # commands: The commands as an array of Command objects
+    # base_state: The base state for the commands to be tested against. If None, state_from_commands is used
+    def isErrorRaised(self, test_exception: Exception, commands: list[Command], base_state: State = None):
+        if base_state is None:
+            base_state = self.state_from_commands(commands)
+
+        self.e.state = base_state
+
+        with self.assertRaises(test_exception):
+            self.e.update_state(commands.copy())
+
     def setUp(self) -> None:
         self.e = Engine(7)
 
-    def testDiagram1(self):
+    def testDiagram01(self):
         for loc in [PIC, BUR, GAS, BRE]:
-            command = [Command(FRANCE, PAR, MOVE, loc)]
+            self.isStateUpdated([Command(FRANCE, PAR, MOVE, loc)], State({FRANCE: {loc: ARMY}}))
 
-            self.e.state = State({FRANCE: {PAR: ARMY}})
-
-            self.e.update_state(command)
-
-            self.assertTrue(self.e.state == State({FRANCE: {loc: ARMY}}))
-
-    def testDiagram2(self):
+    def testDiagram02(self):
         for loc in [IRI, WAL, LON, NTH, BEL, PIC, BRE, MID]:
-            command = [Command(FRANCE, ENG, MOVE, loc)]
+            self.isStateUpdated([Command(FRANCE, ENG, MOVE, loc)], State({FRANCE: {loc: FLEET}}))
 
-            self.e.state = State({FRANCE: {ENG: FLEET}})
-
-            self.e.update_state(command)
-
-            self.assertTrue(self.e.state == State({FRANCE: {loc: FLEET}}))
-
-    def testDiagram3(self):
+    def testDiagram03(self):
         basestate = State({FRANCE: {ROM: FLEET}})
 
         for loc in [TUS, NAP]:
-            command = [Command(FRANCE, ROM, MOVE, loc)]
-            self.e.state = basestate
-
-            self.e.update_state(command)
-
-            self.assertTrue(self.e.state == State({FRANCE: {loc: FLEET}}))
+            self.isStateUpdated([Command(FRANCE, ROM, MOVE, loc)], State({FRANCE: {loc: FLEET}}), basestate)
 
         for loc in [VEN, APU]:
-            command = [Command(FRANCE, ROM, MOVE, loc)]
-            self.e.state = basestate
+            self.isErrorRaised(CommandConflict, [Command(FRANCE, ROM, MOVE, loc)], basestate)
 
-            with self.assertRaises(CommandConflict):
-                self.e.update_state(command)
+    def testDiagram04(self):
+        self.isStateUpdated([Command(GERMANY, BER, MOVE, SIL),
+                             Command(FRANCE, WAR, MOVE, SIL)])
 
-    # def testDiagram4(self):
-    #     commands = [Command(GERMANY, BER, MOVE, SIL),
-    #                 Command(FRANCE, WAR, MOVE, SIL)]
-    #
-    #     self.e.state = state_from_commands(commands)
-    #     oldstate = state_from_commands(commands)
-    #
-    #     self.e.update_state(commands)
-    #
-    #     self.assertTrue(self.e.state == oldstate)
+    def testDiagram05(self):
+        self.isStateUpdated([Command(GERMANY, KIE, MOVE, BER),
+                             Command(GERMANY, BER, MOVE, PRU),
+                             Command(FRANCE, PRU, HOLD)])
 
-    def testDiagram4(self):
-        commands = [Command(GERMANY, BER, MOVE, SIL),
-                    Command(FRANCE, WAR, MOVE, SIL)]
+    def testDiagram06(self):
+        self.isStateUpdated([Command(GERMANY, BER, MOVE, PRU),
+                             Command(GERMANY, PRU, MOVE, BER)])
 
-        self.e.state = state_from_commands(commands)
-        oldstate = state_from_commands(commands)
-
-        self.e.update_state(commands)
-
-        self.assertTrue(self.e.state == oldstate)
-
-        self.diagramRunner(commands, )
-
-    def testDiagram5(self):
-        commands = [Command(GERMANY, KIE, MOVE, BER),
-                    Command(GERMANY, BER, MOVE, PRU),
-                    Command(FRANCE, PRU, HOLD)]
-
-        self.e.state = state_from_commands(commands)
-        oldstate = state_from_commands(commands)
-
-        self.e.update_state(commands)
-
-        self.assertTrue(self.e.state == oldstate)
-
-    def testDiagram6(self):
-        commands = [Command(GERMANY, BER, MOVE, PRU),
-                    Command(GERMANY, PRU, MOVE, BER)]
-
-        self.e.state = state_from_commands(commands)
-        oldstate = state_from_commands(commands)
-
-        self.e.update_state(commands)
-
-        self.assertTrue(self.e.state == oldstate)
-
-    def testDiagram7(self):
+    def testDiagram07(self):
         commands = [Command(GERMANY, HOL, MOVE, BEL),
                     Command(GERMANY, BEL, MOVE, NTH),
                     Command(FRANCE, NTH, MOVE, HOL)]
 
-        self.e.state = state_from_commands(commands)
+        state = State({GERMANY: {NTH: FLEET,
+                                 BEL: ARMY},
+                       FRANCE: {HOL: FLEET}})
 
-        self.e.update_state(commands)
+        self.isStateUpdated(commands, state)
 
-        self.assertTrue(self.e.state == State({GERMANY: {NTH: FLEET, BEL: ARMY},
-                                               FRANCE: {HOL: FLEET}}))
-
-    def testDiagram8(self):
+    def testDiagram08(self):
         commands = [Command(FRANCE, MAR, MOVE, BUR),
                     Command(FRANCE, GAS, SUPPORT, MAR),
                     Command(GERMANY, BUR, HOLD)]
 
-        self.e.state = state_from_commands(commands)
-
-        with self.assertRaises(RetreatDetected):
-            self.e.update_state(commands.copy())
+        self.isErrorRaised(RetreatDetected, commands)
 
         commands[2].retreat = MUN
 
-        self.e.update_state(commands)
+        final_state = State({FRANCE: {BUR: ARMY, GAS: ARMY}, GERMANY: {MUN: ARMY}})
 
-        self.assertTrue(self.e.state == State({FRANCE: {BUR: ARMY, GAS: ARMY},
-                                               GERMANY: {MUN: ARMY}}))
+        self.isStateUpdated(commands, final_state)
 
-    def testDiagram9(self):
+    def testDiagram09(self):
         commands = [Command(GERMANY, SIL, MOVE, PRU),
                     Command(GERMANY, BAL, SUPPORT, SIL),
                     Command(FRANCE, PRU, HOLD)]
 
-        self.e.state = state_from_commands(commands)
-
-        with self.assertRaises(RetreatDetected):
-            self.e.update_state(commands.copy())
+        self.isErrorRaised(RetreatDetected, commands)
 
         commands[2].retreat = WAR
 
-        self.e.update_state(commands)
-
-        self.assertTrue(self.e.state == State({GERMANY: {PRU: ARMY, BAL: FLEET},
-                                               FRANCE: {WAR: ARMY}}))
+        self.isStateUpdated(commands, State({GERMANY: {PRU: ARMY, BAL: FLEET}, FRANCE: {WAR: ARMY}}))
 
     def testDiagram10(self):
-        commands = [Command(FRANCE, GOL, MOVE, TYN),
-                    Command(FRANCE, WES, SUPPORT, GOL),
-                    Command(GERMANY, NAP, MOVE, TYN),
-                    Command(GERMANY, ROM, SUPPORT, NAP)]
-
-        self.e.state = state_from_commands(commands)
-        oldstate = state_from_commands(commands)
-
-        self.e.update_state(commands)
-
-        self.assertTrue(self.e.state == oldstate)
+        self.isStateUpdated([Command(FRANCE, GOL, MOVE, TYN),
+                             Command(FRANCE, WES, SUPPORT, GOL),
+                             Command(GERMANY, NAP, MOVE, TYN),
+                             Command(GERMANY, ROM, SUPPORT, NAP)])
 
     def testDiagram11(self):
-        commands = [Command(FRANCE, GOL, MOVE, TYN),
-                    Command(FRANCE, WES, SUPPORT, GOL),
-                    Command(GERMANY, TYN, HOLD),
-                    Command(GERMANY, ROM, SUPPORT, TYN)]
-
-        self.e.state = state_from_commands(commands)
-        oldstate = state_from_commands(commands)
-
-        self.e.update_state(commands)
-
-        self.assertTrue(self.e.state == oldstate)
+        self.isStateUpdated([Command(FRANCE, GOL, MOVE, TYN),
+                             Command(FRANCE, WES, SUPPORT, GOL),
+                             Command(GERMANY, TYN, HOLD),
+                             Command(GERMANY, ROM, SUPPORT, TYN)])
 
     def testDiagram12(self):
         commands = [Command(FRANCE, BOH, MOVE, MUN),
@@ -363,21 +308,16 @@ class Diagrams(unittest.TestCase):  # https://media.wizards.com/2015/downloads/a
                     Command(ITALY, WAR, MOVE, SIL),
                     Command(ITALY, PRU, SUPPORT, WAR)]
 
-        self.e.state = state_from_commands(commands.copy())
-
-        with self.assertRaises(RetreatDetected):
-            self.e.update_state(commands)
+        self.isErrorRaised(RetreatDetected, commands)
 
         commands[2].retreat = RUH
 
-        self.e.update_state(commands)
-
-        self.assertTrue(self.e.state == State({FRANCE: {MUN: ARMY,
-                                                        TYR: ARMY},
-                                               GERMANY: {RUH: ARMY,
-                                                         BER: ARMY},
-                                               ITALY: {PRU: ARMY,
-                                                       WAR: ARMY}}))
+        self.isStateUpdated(commands, State({FRANCE: {MUN: ARMY,
+                                                      TYR: ARMY},
+                                             GERMANY: {RUH: ARMY,
+                                                       BER: ARMY},
+                                             ITALY: {PRU: ARMY,
+                                                     WAR: ARMY}}))
 
     def testDiagram13(self):
         commands = [Command(FRANCE, SEV, MOVE, RUM),
@@ -385,19 +325,14 @@ class Diagrams(unittest.TestCase):  # https://media.wizards.com/2015/downloads/a
                     Command(FRANCE, SER, SUPPORT, RUM),
                     Command(GERMANY, BUL, MOVE, RUM)]
 
-        self.e.state = state_from_commands(commands)
-
-        with self.assertRaises(RetreatDetected):
-            self.e.update_state(commands)
+        self.isErrorRaised(RetreatDetected, commands)
 
         commands[3].retreat = CON
 
-        self.e.update_state(commands)
-
-        self.assertTrue(self.e.state == State({FRANCE: {SER: ARMY,
-                                                        BUL: ARMY,
-                                                        RUM: ARMY},
-                                               GERMANY: {CON: ARMY}}))
+        self.isStateUpdated(commands, State({FRANCE: {SER: ARMY,
+                                                      BUL: ARMY,
+                                                      RUM: ARMY},
+                                             GERMANY: {CON: ARMY}}))
 
     def testDiagram14(self):
         commands = [Command(FRANCE, BUL, MOVE, RUM),
@@ -407,52 +342,35 @@ class Diagrams(unittest.TestCase):  # https://media.wizards.com/2015/downloads/a
                     Command(GERMANY, SER, SUPPORT, RUM),
                     Command(GERMANY, SEV, MOVE, RUM)]
 
-        self.e.state = state_from_commands(commands)
-
-        with self.assertRaises(RetreatDetected):
-            self.e.update_state(commands)
+        self.isErrorRaised(RetreatDetected, commands)
 
         commands[0].retreat = CON
 
-        self.e.update_state(commands)
-
-        self.assertTrue(self.e.state == State({FRANCE: {BLA: ARMY,
-                                                        CON: ARMY},
-                                               GERMANY: {RUM: ARMY,
-                                                         BUL: ARMY,
-                                                         SER: ARMY,
-                                                         GRE: ARMY}}))
+        self.isStateUpdated(commands, State({FRANCE: {BLA: FLEET,
+                                                      CON: ARMY},
+                                             GERMANY: {RUM: ARMY,
+                                                       BUL: ARMY,
+                                                       SER: ARMY,
+                                                       GRE: ARMY}}))
 
     def testDiagram15(self):
-        commands = [Command(FRANCE, PRU, MOVE, WAR),
-                    Command(FRANCE, SIL, SUPPORT, PRU),
-                    Command(GERMANY, WAR, HOLD),
-                    Command(GERMANY, BOH, MOVE, SIL)]
-
-        self.e.state = state_from_commands(commands)
-        oldstate = state_from_commands(commands)
-
-        self.e.update_state(commands)
-
-        self.assertTrue(self.e.state == oldstate)
+        self.isStateUpdated([Command(FRANCE, PRU, MOVE, WAR),
+                             Command(FRANCE, SIL, SUPPORT, PRU),
+                             Command(GERMANY, WAR, HOLD),
+                             Command(GERMANY, BOH, MOVE, SIL)])
 
     def testDiagram16(self):
         commands = [Command(FRANCE, PRU, MOVE, WAR),
                     Command(FRANCE, SIL, SUPPORT, PRU),
                     Command(GERMANY, WAR, MOVE, SIL)]
 
-        self.e.state = state_from_commands(commands)
-
-        with self.assertRaises(RetreatDetected):
-            self.e.update_state(commands)
+        self.isErrorRaised(RetreatDetected, commands)
 
         commands[2].retreat = GAL
 
-        self.e.update_state(commands)
-
-        self.assertTrue(self.e.state == State({FRANCE: {SIL: ARMY,
-                                                        WAR: ARMY},
-                                               GERMANY: {GAL: ARMY}}))
+        self.isStateUpdated(commands, State({FRANCE: {SIL: ARMY,
+                                                      WAR: ARMY},
+                                             GERMANY: {GAL: ARMY}}))
 
     def testDiagram17(self):
         commands = [Command(FRANCE, BER, MOVE, PRU),
@@ -461,21 +379,90 @@ class Diagrams(unittest.TestCase):  # https://media.wizards.com/2015/downloads/a
                     Command(GERMANY, WAR, SUPPORT, PRU),
                     Command(GERMANY, BAL, MOVE, PRU)]
 
-        self.e.state = state_from_commands(commands)
-
-        with self.assertRaises(RetreatDetected):
-            self.e.update_state(commands.copy())
+        # self.isErrorRaised(RetreatDetected, commands)
 
         commands[1].retreat = BOH
 
-        self.e.update_state(commands)
+        self.isStateUpdated(commands, State({FRANCE: {BER: ARMY,
+                                                      BOH: ARMY},
+                                             GERMANY: {SIL: ARMY,
+                                                       WAR: ARMY,
+                                                       BAL: FLEET}}))
 
-        self.assertTrue(self.e.state == State({FRANCE: {BER: ARMY,
-                                                        SIL: BOH},
-                                               }))
+    def testDiagram18(self):
+        commands = [Command(FRANCE, BER, HOLD),
+                    Command(FRANCE, MUN, MOVE, SIL),
+                    Command(GERMANY, PRU, MOVE, BER),
+                    Command(GERMANY, SIL, SUPPORT, PRU),
+                    Command(GERMANY, BOH, MOVE, MUN),
+                    Command(GERMANY, TYR, SUPPORT, BOH)]
+
+        self.isErrorRaised(RetreatDetected, commands)
+
+        commands[1].retreat = RUH
+
+        self.isStateUpdated(commands, State({FRANCE: {BER: ARMY,
+                                                      RUH: ARMY},
+                                             GERMANY: {PRU: ARMY,
+                                                       SIL: ARMY,
+                                                       MUN: ARMY,
+                                                       TYR: ARMY}}))
 
 
+class WanderTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.MAX_MOVES = 1000
+        self.e = Engine(1)
 
+    def testSingleArmy(self):
+        current = BOH  # Starting Location
+
+        self.e.state = State({FRANCE: {current: ARMY}})
+
+        moves = 0
+
+        while moves < self.MAX_MOVES:
+            loc = getLocation(current)
+            move_to = random.choice(loc.border)
+
+            try:
+                self.e.update_state([Command(FRANCE, current, MOVE, move_to)])
+                # print("Moved to %s" % move_to)
+            except CommandConflict:
+                self.assertTrue(getLocation(move_to).loctype == LocTypeEnum.WATER)
+                # print("Correctly detected an attempt to move into the water")
+                continue
+
+            current = move_to
+
+            self.assertTrue(self.e.state == State({FRANCE: {current: ARMY}}))
+
+            moves = moves + 1
+
+    def testSingleFleet(self):
+        current = TYN  # Starting Location
+
+        self.e.state = State({FRANCE: {current: FLEET}})
+
+        moves = 0
+
+        while moves < self.MAX_MOVES:
+            loc = getLocation(current)
+            move_to = random.choice(loc.border)
+
+            try:
+                self.e.update_state([Command(FRANCE, current, MOVE, move_to)])
+                # print("Moved to %s" % move_to)
+            except CommandConflict:
+                # self.assertTrue(getLocation(move_to).loctype == LocTypeEnum.INLAND)
+                # print("Correctly detected an attempt to move into the water")
+                continue
+
+            current = move_to
+
+            self.assertTrue(self.e.state == State({FRANCE: {current: FLEET}}))
+
+            moves = moves + 1
 
 
 class Singles(unittest.TestCase):

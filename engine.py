@@ -20,7 +20,7 @@
 # TODO:       _____\/\\\__\///\\\\\\\/_______\/\\\__\///\\\\\\\/_______\/\\\__\///\\\\\\\/_______\/\\\_
 # TODO:        _____\///_____\///////_________\///_____\///////_________\///_____\///////_________\///_
 from EnumsAndUtils import *
-from map import Map
+from map import getLocation
 from state import State
 
 HOLD = ActionEnum.HOLD
@@ -29,21 +29,92 @@ SUPPORT = ActionEnum.SUPPORT
 CONVOY = ActionEnum.CONVOY
 
 
-class ResolveDislodge(RuleBase):  # Am I dislodged?
+def resolvable_move(audit: Command, commands: list[Command]) -> bool:
+    if audit not in commands:
+        raise Exception("audit must be in commands")
+
+    if audit.getAction() != MOVE:
+        # print("Not a move......")
+        return False
+
+    LocSort = sort_commands("unit", commands)
+    TargetSort = sort_commands("location", commands)
+
+    # If a unit is where we're trying to move, we can assuredly move there if they're not moving and we're got more
+    # support or they are moving somewhere other than where we are and we've got at least one supporter. If the
+    # move at that location is later deemed to not be resolvable, that location must retreat
+    onlymove = True
+
+    for cmd in TargetSort[audit.getTargetLocation()]:
+        if cmd is not audit and cmd.getAction() is MOVE:
+            onlymove = False
+            break
+
+    if audit.getTargetLocation() in LocSort and onlymove:
+        target_command = LocSort[audit.getTargetLocation()][0]
+        my_support = count_support(audit, commands)
+        their_support = count_support(target_command, commands)
+
+        if target_command.getAction() != MOVE and my_support > their_support:
+            return True
+
+        if target_command.getAction() == MOVE and target_command.getTargetLocation() != audit.getCurrentLocation() and my_support > 0:
+            return True
+
+    # Now we traverse the map at each location (starting with our audit) first checking what happens when someone
+    # else is trying to move where we are and if the unit in front is moving. If they are we start over and repeat
+    # these checks
+    current = audit
+
+    while True:
+        my_support = count_support(current, commands)
+
+        # Checking the other units targeting the location where the current command is trying to move
+        for loc in TargetSort[current.getTargetLocation()]:
+            if loc is current or loc.getAction() is not MOVE:  # We only care about other people moving there
+                continue
+
+            # If someone else is trying to move there with at least the same support we have, we cannot move there
+            if count_support(loc, commands) >= my_support:
+                return False
+
+        # If no one is where you're trying to move
+        if current.getTargetLocation() not in LocSort:
+            return True
+
+        next = LocSort[current.getTargetLocation()][0]
+
+        if next is audit:
+            return audit.getTargetLocation() != current.getCurrentLocation()  # Prevent Diagram 6
+
+        if my_support > count_support(next, commands):
+            return True
+
+        if next.getAction() != MOVE:  # The unit on the next location is not moving
+            return False
+
+        current = next
+
+
+class ResolveCutSupport(RuleBase):
     def attempt_resolve(self, commands: list[Command]) -> dict[Command: Command]:
         rtr = dict()
         TargetSort = sort_commands("location", commands)
+        LocSort = sort_commands("unit", commands)
 
-        for command in commands:
-            if command.getAction() in [MOVE, HOLD]:
+        for cmd in commands:
+            if cmd.getAction() is not SUPPORT:
                 continue
 
-            if command.getCurrentLocation() in TargetSort:
-                for targeter in TargetSort[command.getCurrentLocation()]:
-                    if targeter.getAction() == MOVE and targeter.getAuthor() != command.getAuthor():
-                        print("%s is dislodged" % command)
-                        rtr[command] = turn_to_hold(command)
-                        break
+            if cmd.getCurrentLocation() in TargetSort:
+                supported_cmd = LocSort[cmd.getTargetLocation()][0]
+
+                for invader in TargetSort[cmd.getCurrentLocation()]:
+                    if invader.getAction() == MOVE and invader.getAuthor() != cmd.getAuthor():
+                        if supported_cmd.getTargetLocation() != invader.getCurrentLocation() or \
+                           (supported_cmd.getTargetLocation() == invader.getCurrentLocation() and count_support(supported_cmd, commands) <= count_support(invader, commands)):
+                            rtr[cmd] = turn_to_hold(cmd)
+                            break
 
         return rtr
 
@@ -53,89 +124,78 @@ class DetectRetreats(RuleBase):
         rtr = dict()
         TargetSort = sort_commands("location", commands)
 
-        for command in commands:
-            if command.getAction() == MOVE or command.getCurrentLocation() not in TargetSort:
+        for cmd in commands:
+            if cmd.getAction() == MOVE or cmd.getCurrentLocation() not in TargetSort:
                 continue
 
-            for targeter in TargetSort[command.getCurrentLocation()]:
-                if targeter.getAction() == MOVE and count_support(targeter, commands) > count_support(command, commands):
-                    if command.retreat is None:
-                        raise RetreatDetected(command)
+            my_support = count_support(cmd, commands)
 
-                    rtr[command] = Command(command.getAuthor(), command.getCurrentLocation(), MOVE, command.retreat)
-                    print("%s is retreating" % command)
+            for invader in TargetSort[cmd.getCurrentLocation()]:
+                if invader.getAction() == MOVE and count_support(invader, commands) > my_support:
+                    if cmd.retreat is None:
+                        raise RetreatDetected(cmd)
+
+                    rtr[cmd] = Command(cmd.getAuthor(), cmd.getCurrentLocation(), MOVE, cmd.retreat)
+                    print("%s is retreating" % cmd)
                     break
 
         return rtr
 
 
-class ResolveMove(RuleBase):
-    def resolvable_move(self, audit: Command, commands: list[Command]) -> bool:
-        if audit not in commands:
-            raise Exception("audit must be in commands")
-
-        if audit.getAction() != MOVE:
-            print("Not a move......")
-            return False
+class ResolveMoveRetreats(RuleBase):
+    def attempt_resolve(self, commands: list[Command]) -> dict[Command: Command]:
+        rtr = dict()
 
         LocSort = sort_commands("unit", commands)
         TargetSort = sort_commands("location", commands)
 
-        if audit.getTargetLocation() in LocSort and count_support(audit, commands) > count_support(LocSort[audit.getTargetLocation()][0], commands):
-            return True
+        for cmd in commands:
+            if cmd.getAction() is not MOVE or \
+               cmd.getCurrentLocation() not in TargetSort or \
+               resolvable_move(cmd, commands):
+                continue
 
-        current = audit
+            my_support = count_support(cmd, commands)
 
-        while True:
-            for loc in TargetSort[current.getTargetLocation()]:
-                if loc is current:
+            for invader in TargetSort[cmd.getCurrentLocation()]:
+                if invader.getAction() != MOVE:
                     continue
 
-                if loc.getAction() == MOVE:
-                    if loc.getTargetLocation() == current.getCurrentLocation() and \
-                       count_support(loc, commands) > count_support(current, commands):
-                        raise RetreatDetected(current)
+                their_support = count_support(invader, commands)
 
-                    if count_support(loc, commands) >= count_support(current, commands):  # If someone else is trying to move there
-                        print("Someone else is trying to move there")
-                        return False
+                if their_support > my_support or (cmd.getTargetLocation() != invader.getCurrentLocation() and their_support > 1):
+                    if cmd.retreat is None:
+                        raise RetreatDetected
 
-            # If no one is where you're trying to move
-            if current.getTargetLocation() not in LocSort:
-                print("No one is trying to move there")
-                return True  # Everyone else is doing something other than moving there
-
-            next = LocSort[current.getTargetLocation()][0]
-
-            if next.getAction() != MOVE:  # The unit on the next location is not moving
-                print("The unit is blocked by something non moving")
-                return False
-
-            if next is audit:
-                return audit.getTargetLocation() != current.getCurrentLocation()
-
-            current = next
-
-    def attempt_resolve(self, commands: list[Command]) -> dict[Command: Command]:
-        rtr = dict()
-
-        for command in commands:
-            try:
-                if not self.resolvable_move(command, commands):
-                    rtr[command] = turn_to_hold(command)
-
-            except RetreatDetected:
-                if command.retreat is None:
-                    raise RetreatDetected
-
-                rtr[command] = Command(command.getAuthor(), command.getCurrentLocation(), MOVE, command.retreat)
+                    rtr[cmd] = Command(cmd.getAuthor(), cmd.getCurrentLocation(), MOVE, cmd.getRetreatLocation())
 
         return rtr
 
 
-rules = [ResolveDislodge,
-         DetectRetreats,
-         ResolveMove]
+class ResolveMove(RuleBase):
+    def attempt_resolve(self, commands: list[Command]) -> dict[Command: Command]:
+        rtr = dict()
+        TargetSort = sort_commands("location", commands)
+
+        for command in commands:
+            if command.getAction() != MOVE:
+                continue
+
+            if not resolvable_move(command, commands):
+                rtr[command] = turn_to_hold(command)
+
+                if command.getCurrentLocation() in TargetSort:
+                    for targeter in TargetSort[command.getCurrentLocation()]:
+                        if targeter.getAction() == SUPPORT:
+                            rtr[targeter] = turn_to_hold(targeter)
+
+        return rtr
+
+
+rules = [ResolveCutSupport,
+         ResolveMoveRetreats,
+         ResolveMove,
+         DetectRetreats]
 
 
 class Engine:
@@ -165,7 +225,6 @@ class Engine:
 
         self.state = State(startpos)
         self.players = players
-        self.map = Map()
 
     ####################################################################################################################
     ## Checking each command against the map and the state to see if the list of commands could be rendered           ##
@@ -182,7 +241,7 @@ class Engine:
             command.validate()
 
             country = self.state.getCountry(command.getAuthor())  # What I really want is the country object
-            province = self.map.getLocation(command.getCurrentLocation())
+            province = getLocation(command.getCurrentLocation())
 
             if command.getCurrentLocation() in checkedlocations:
                 raise CommandConflict("More than one command for the unit at %s" % command.getCurrentLocation())
@@ -200,26 +259,29 @@ class Engine:
                 supportedcommand = LocSort[command.getTargetLocation()][0]
 
                 if supportedcommand.getTargetLocation() not in province.border and supportedcommand.getCurrentLocation() not in province.border:
-                    raise CommandConflict("%s does not border %s" % (province, self.map.getLocation(supportedcommand.getTargetLocation())))
+                    raise CommandConflict(
+                        "%s does not border %s" % (province, getLocation(supportedcommand.getTargetLocation())))
 
             if command.action == MOVE:
                 if command.getTargetLocation() not in province.border:
-                    raise CommandConflict("%s does not border %s" % (province, self.map.getLocation(command.getTargetLocation())))
+                    raise CommandConflict(
+                        "%s does not border %s" % (province, getLocation(command.getTargetLocation())))
 
-                if country.units[command.unit] == UnitEnum.ARMY and province.loctype == LocTypeEnum.WATER:
+                if country.units[command.unit] == UnitEnum.ARMY and getLocation(
+                        command.getTargetLocation()).loctype == LocTypeEnum.WATER:
                     raise CommandConflict("Your little men can't swim silly")
 
                 if country.units[command.unit] == UnitEnum.FLEET:
-                    if province.loctype == LocTypeEnum.INLAND:
+                    if getLocation(command.getTargetLocation()).loctype == LocTypeEnum.INLAND:
                         raise CommandConflict("The fleet is unable to progress inland")
 
-                    target = self.map.getLocation(command.getTargetLocation())
+                    target = getLocation(command.getTargetLocation())
 
                     if province.loctype == LocTypeEnum.COASTAL and target.loctype == LocTypeEnum.COASTAL:
                         found = False
 
                         for border in province.border:
-                            if self.map.getLocation(border).loctype == LocTypeEnum.WATER and border in target.border:
+                            if getLocation(border).loctype == LocTypeEnum.WATER and border in target.border:
                                 found = True
                                 break
 
