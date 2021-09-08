@@ -24,7 +24,7 @@
 # TODO:        ____\///_____\///____________________________________________________________\///_____\///_____
 
 from EnumsAndUtils import *
-from map import Map
+from map import getLocation
 
 
 # Keeps the state of the game in order
@@ -33,7 +33,6 @@ class State:
     # startpos of a dict of dicts where provided with a CountryEnum and LocEnum (in that order) a UnitEnum will be stored
     # there.
     def __init__(self, startpos: dict[CountryEnum, dict[LocEnum, UnitEnum]]):
-        map = Map()
         state = dict()
 
         for country in startpos:
@@ -42,10 +41,9 @@ class State:
             for province in startpos[country]:
                 state[country].units[province] = startpos[country][province]
 
-                if map.getLocation(province).iscapital:
+                if getLocation(province).iscapital:
                     state[country].capitals.append(province)
 
-        self.map = map
         self.state = state
 
         self.verify_state()
@@ -80,10 +78,10 @@ class State:
 
                 claimedunitlocations.append(location)
 
-                if self.map.getLocation(location).loctype == LocTypeEnum.INLAND and unit == UnitEnum.FLEET:
+                if getLocation(location).loctype == LocTypeEnum.INLAND and unit == UnitEnum.FLEET:
                     raise InvariantError("Found a Fleet in %s" % location)
 
-                if self.map.getLocation(location).loctype == LocTypeEnum.WATER and unit == UnitEnum.ARMY:
+                if getLocation(location).loctype == LocTypeEnum.WATER and unit == UnitEnum.ARMY:
                     raise InvariantError("Found an Army in %s" % location)
 
                 unitcnt = unitcnt + 1
