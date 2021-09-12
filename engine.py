@@ -96,6 +96,33 @@ def resolvable_move(audit: Command, commands: list[Command]) -> bool:
         current = next
 
 
+# Checks if the move command is a valid convoy on paper
+def validConvoyMove(audit: Command, commands: list[Command]) -> bool:
+    if audit.getAction() is not MOVE:
+        raise Exception()
+
+    TargetSort = sort_commands("location", commands)
+
+    node = audit # A node on the chain of convoys
+
+    while True:
+        if node.getCurrentLocation() not in TargetSort:
+            return False
+
+        for cmd in TargetSort[node.getCurrentLocation()]:
+            if cmd.getAction() == CONVOY:
+                node = cmd
+                break
+        else:
+            node = None
+
+        if node is None:
+            return False
+
+        if node.getConvoyDropoff() is audit.getTargetLocation():
+            return True
+
+
 class ResolveCutSupport(RuleBase):
     def attempt_resolve(self, commands: list[Command]) -> dict[Command: Command]:
         rtr = dict()
@@ -110,11 +137,11 @@ class ResolveCutSupport(RuleBase):
                 supported_cmd = LocSort[cmd.getTargetLocation()][0]
 
                 for invader in TargetSort[cmd.getCurrentLocation()]:
-                    if invader.getAction() == MOVE and invader.getAuthor() != cmd.getAuthor():
-                        if supported_cmd.getTargetLocation() != invader.getCurrentLocation() or \
-                           (supported_cmd.getTargetLocation() == invader.getCurrentLocation() and count_support(supported_cmd, commands) <= count_support(invader, commands)):
-                            rtr[cmd] = turn_to_hold(cmd)
-                            break
+                    if invader.getAction() == MOVE and \
+                            invader.getAuthor() != cmd.getAuthor() and \
+                            (supported_cmd.getTargetLocation() != invader.getCurrentLocation() or count_support(invader, commands) > count_support(cmd, commands)):
+                        rtr[cmd] = turn_to_hold(cmd)
+                        break
 
         return rtr
 
@@ -131,7 +158,7 @@ class DetectRetreats(RuleBase):
             my_support = count_support(cmd, commands)
 
             for invader in TargetSort[cmd.getCurrentLocation()]:
-                if invader.getAction() == MOVE and count_support(invader, commands) > my_support:
+                if invader.getAction() == MOVE and count_support(invader, commands) > my_support and invader.getAuthor() != cmd.getAuthor():
                     if cmd.retreat is None:
                         raise RetreatDetected(cmd)
 
@@ -151,8 +178,8 @@ class ResolveMoveRetreats(RuleBase):
 
         for cmd in commands:
             if cmd.getAction() is not MOVE or \
-               cmd.getCurrentLocation() not in TargetSort or \
-               resolvable_move(cmd, commands):
+                    cmd.getCurrentLocation() not in TargetSort or \
+                    resolvable_move(cmd, commands):
                 continue
 
             my_support = count_support(cmd, commands)
@@ -163,7 +190,8 @@ class ResolveMoveRetreats(RuleBase):
 
                 their_support = count_support(invader, commands)
 
-                if their_support > my_support or (cmd.getTargetLocation() != invader.getCurrentLocation() and their_support > 1):
+                if their_support > my_support or (
+                        cmd.getTargetLocation() != invader.getCurrentLocation() and their_support > 1):
                     if cmd.retreat is None:
                         raise RetreatDetected
 
@@ -177,30 +205,88 @@ class ResolveMove(RuleBase):
         rtr = dict()
         TargetSort = sort_commands("location", commands)
 
-        for command in commands:
-            if command.getAction() != MOVE:
+        for cmd in commands:
+            if cmd.getAction() != MOVE:
                 continue
 
-            if not resolvable_move(command, commands):
-                rtr[command] = turn_to_hold(command)
+            if not resolvable_move(cmd, commands):
+                rtr[cmd] = turn_to_hold(cmd)
 
-                if command.getCurrentLocation() in TargetSort:
-                    for targeter in TargetSort[command.getCurrentLocation()]:
+                if cmd.getCurrentLocation() in TargetSort:
+                    for targeter in TargetSort[cmd.getCurrentLocation()]:
                         if targeter.getAction() == SUPPORT:
                             rtr[targeter] = turn_to_hold(targeter)
 
         return rtr
 
 
+class ResolveCutConvoy(RuleBase):
+    def attempt_resolve(self, commands: list[Command]) -> dict[Command: Command]:
+        rtr = dict()
+
+        TargetSort = sort_commands("location", commands)
+
+        for cmd in commands:
+            if cmd.getAction() != CONVOY:
+                continue
+
+            if cmd.getCurrentLocation() not in TargetSort:
+                continue
+
+            my_support = count_support(cmd, commands)
+
+            for invader in TargetSort[cmd.getCurrentLocation()]:
+                if invader.getAction() == MOVE and count_support(invader, commands) > my_support:
+                    rtr[cmd] = turn_to_hold(cmd)
+                    break
+
+        return rtr
+
+
+class ResolveBrokenConvoys(RuleBase):
+    def attempt_resolve(self, commands: list[Command]) -> dict[Command: Command]:
+        rtr = dict()
+
+        TargetSort = sort_commands("location", commands)
+
+        for cmd in commands:
+            if cmd.getAction() != MOVE:
+                continue
+
+            if cmd.getTargetLocation() in getLocation(cmd.getCurrentLocation()).border:
+                continue
+
+            if validConvoyMove(cmd, commands):
+                continue
+
+            rtr[cmd] = turn_to_hold(cmd)
+
+            if cmd.getCurrentLocation() in TargetSort:
+                for invader in TargetSort[cmd.getCurrentLocation()]:
+                    if invader.getAction() == SUPPORT:
+                        rtr[invader] = turn_to_hold(invader)
+
+        return rtr
+
+
 rules = [ResolveCutSupport,
+         ResolveCutConvoy,
          ResolveMoveRetreats,
+         ResolveBrokenConvoys,
          ResolveMove,
          DetectRetreats]
 
 
 class Engine:
     def __init__(self, players: int):
-        startpos = {CountryEnum.AUSTRIA: {LocEnum.VIE: UnitEnum.ARMY,
+        startpos = {
+                    CountryEnum.ITALY: {LocEnum.ROM: UnitEnum.ARMY,
+                                        LocEnum.VEN: UnitEnum.ARMY,
+                                        LocEnum.NAP: UnitEnum.FLEET},
+                    CountryEnum.GERMANY: {LocEnum.BER: UnitEnum.ARMY,
+                                          LocEnum.MUN: UnitEnum.ARMY,
+                                          LocEnum.KIE: UnitEnum.FLEET},
+                    CountryEnum.AUSTRIA: {LocEnum.VIE: UnitEnum.ARMY,
                                           LocEnum.BUD: UnitEnum.ARMY,
                                           LocEnum.TRI: UnitEnum.FLEET},
                     CountryEnum.ENGLAND: {LocEnum.LON: UnitEnum.FLEET,
@@ -209,12 +295,6 @@ class Engine:
                     CountryEnum.FRANCE: {LocEnum.PAR: UnitEnum.ARMY,
                                          LocEnum.MAR: UnitEnum.ARMY,
                                          LocEnum.BRE: UnitEnum.FLEET},
-                    CountryEnum.GERMANY: {LocEnum.BER: UnitEnum.ARMY,
-                                          LocEnum.MUN: UnitEnum.ARMY,
-                                          LocEnum.KIE: UnitEnum.FLEET},
-                    CountryEnum.ITALY: {LocEnum.ROM: UnitEnum.ARMY,
-                                        LocEnum.VEN: UnitEnum.ARMY,
-                                        LocEnum.NAP: UnitEnum.FLEET},
                     CountryEnum.RUSSIA: {LocEnum.MOS: UnitEnum.ARMY,
                                          LocEnum.SEV: UnitEnum.FLEET,
                                          LocEnum.WAR: UnitEnum.ARMY,
@@ -223,59 +303,68 @@ class Engine:
                                          LocEnum.CON: UnitEnum.ARMY,
                                          LocEnum.SMY: UnitEnum.ARMY}}
 
+        for x in range(7-players):
+            del startpos[list(startpos.keys())[0]]
+
         self.state = State(startpos)
         self.players = players
+
+    def getState(self):
+        return self.state
+
 
     ####################################################################################################################
     ## Checking each command against the map and the state to see if the list of commands could be rendered           ##
     ####################################################################################################################
-    def check_commands(self, commands: list):
+
+    # Provide country if you want to just check one country
+    def check_commands(self, commands: list, country: CountryEnum = None):
         checkedlocations = []
 
         LocSort = sort_commands("unit", commands)
 
-        if len(commands) != len(self.state.getAllUnits()):
+        if len(commands) != len(self.state.getAllUnits()) and country is None:
             raise CommandConflict("Mismatch: %i commands and %i units" % (len(commands), len(self.state.getAllUnits())))
 
-        for command in commands:
-            command.validate()
+        for cmd in commands:
+            cmd.validate()
 
-            country = self.state.getCountry(command.getAuthor())  # What I really want is the country object
-            province = getLocation(command.getCurrentLocation())
+            country = self.state.getCountry(cmd.getAuthor())  # What I really want is the country object
+            province = getLocation(cmd.getCurrentLocation())
 
-            if command.getCurrentLocation() in checkedlocations:
-                raise CommandConflict("More than one command for the unit at %s" % command.getCurrentLocation())
+            if cmd.getCurrentLocation() in checkedlocations:
+                raise CommandConflict("More than one command for the unit at %s" % cmd.getCurrentLocation())
 
-            if command.getCurrentLocation() not in country.units:
+            if cmd.getCurrentLocation() not in country.units:
                 raise CommandConflict("No unit at that location")
 
-            if command.getAction() == HOLD:
+            if cmd.getAction() == HOLD:
                 continue
 
-            if command.getAction() == SUPPORT:
-                if command.getTargetLocation() not in LocSort:
+            if cmd.getAction() == SUPPORT:
+                if cmd.getTargetLocation() not in LocSort:
                     continue
 
-                supportedcommand = LocSort[command.getTargetLocation()][0]
+                supportedcommand = LocSort[cmd.getTargetLocation()][0]
 
                 if supportedcommand.getTargetLocation() not in province.border and supportedcommand.getCurrentLocation() not in province.border:
                     raise CommandConflict(
                         "%s does not border %s" % (province, getLocation(supportedcommand.getTargetLocation())))
 
-            if command.action == MOVE:
-                if command.getTargetLocation() not in province.border:
+            if cmd.action == MOVE and not validConvoyMove(cmd, commands):
+                if cmd.getTargetLocation() not in province.border:
                     raise CommandConflict(
-                        "%s does not border %s" % (province, getLocation(command.getTargetLocation())))
+                        "%s does not border %s" % (province, getLocation(cmd.getTargetLocation())))
 
-                if country.units[command.unit] == UnitEnum.ARMY and getLocation(
-                        command.getTargetLocation()).loctype == LocTypeEnum.WATER:
+                if country.units[cmd.unit] == UnitEnum.ARMY and getLocation(
+                        cmd.getTargetLocation()).loctype == LocTypeEnum.WATER:
                     raise CommandConflict("Your little men can't swim silly")
 
-                if country.units[command.unit] == UnitEnum.FLEET:
-                    if getLocation(command.getTargetLocation()).loctype == LocTypeEnum.INLAND:
+                if country.units[cmd.unit] == UnitEnum.FLEET:
+                    if getLocation(cmd.getTargetLocation()).loctype == LocTypeEnum.INLAND:
                         raise CommandConflict("The fleet is unable to progress inland")
 
-                    target = getLocation(command.getTargetLocation())
+                    target = getLocation(cmd.getTargetLocation())
 
                     if province.loctype == LocTypeEnum.COASTAL and target.loctype == LocTypeEnum.COASTAL:
                         found = False
