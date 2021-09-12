@@ -108,6 +108,17 @@ class State:
     def __ne__(self, other):
         return not self.__eq__(other)
 
+    def __str__(self):
+        rtr = ""
+
+        for country in self.state:
+            rtr = "%s%s has:\n" % (rtr, country)
+
+            for loc in self.state[country].units:
+                rtr = "%s\t%s in %s\n" % (rtr, self.state[country].units[loc], getLocation(loc))
+
+        return rtr
+
     # Returns the country object for a given country enum
     def getCountry(self, country: CountryEnum) -> Country:
         return self.state[country] if country in self.state else None
