@@ -89,6 +89,9 @@ SER = LocEnum.SER
 CON = LocEnum.CON
 GRE = LocEnum.GRE
 GAL = LocEnum.GAL
+NWY = LocEnum.NWY
+TUN = LocEnum.TUN
+ION = LocEnum.ION
 
 ARMY = UnitEnum.ARMY
 FLEET = UnitEnum.FLEET
@@ -96,6 +99,7 @@ FLEET = UnitEnum.FLEET
 HOLD = ActionEnum.HOLD
 MOVE = ActionEnum.MOVE
 SUPPORT = ActionEnum.SUPPORT
+CONVOY = ActionEnum.CONVOY
 
 
 class MapTests(unittest.TestCase):
@@ -379,7 +383,7 @@ class Diagrams(unittest.TestCase):  # https://media.wizards.com/2015/downloads/a
                     Command(GERMANY, WAR, SUPPORT, PRU),
                     Command(GERMANY, BAL, MOVE, PRU)]
 
-        # self.isErrorRaised(RetreatDetected, commands)
+        self.isErrorRaised(RetreatDetected, commands)
 
         commands[1].retreat = BOH
 
@@ -408,6 +412,64 @@ class Diagrams(unittest.TestCase):  # https://media.wizards.com/2015/downloads/a
                                                        MUN: ARMY,
                                                        TYR: ARMY}}))
 
+    def testDiagram19(self):
+        commands = [Command(FRANCE, LON, MOVE, NWY),
+                    Command(FRANCE, NTH, CONVOY, LON, NWY)]
+
+        self.isStateUpdated(commands, State({FRANCE: {NWY: ARMY,
+                                                      NTH: FLEET}}))
+
+    def testDiagram20(self):
+        commands = [Command(FRANCE, LON, MOVE, TUN),
+                    Command(FRANCE, ENG, CONVOY, LON, MID),
+                    Command(FRANCE, MID, CONVOY, ENG, WES),
+                    Command(GERMANY, WES, CONVOY, MID, TUN)]
+
+        self.isStateUpdated(commands, State({FRANCE: {TUN: ARMY,
+                                                      ENG: FLEET,
+                                                      MID: FLEET},
+                                             GERMANY: {WES: FLEET}}))
+
+    def testDiagram21(self):
+        commands = [Command(FRANCE, SPA, MOVE, NAP),
+                    Command(FRANCE, GOL, CONVOY, SPA, TYN),
+                    Command(FRANCE, TYN, CONVOY, GOL, NAP),
+                    Command(GERMANY, ION, MOVE, TYN),
+                    Command(GERMANY, TUN, SUPPORT, ION)]
+
+        self.isErrorRaised(RetreatDetected, commands)
+
+        commands[2].retreat = WES
+
+        self.isStateUpdated(commands, State({FRANCE: {SPA: ARMY,
+                                                      GOL: FLEET,
+                                                      WES: FLEET},
+                                             GERMANY: {TYN: FLEET,
+                                                       TUN: FLEET}}))  # A base state will need to be constructed to make sure a fleet is on TUN
+
+    def testDiagram22(self):
+        self.isStateUpdated([Command(FRANCE, PAR, MOVE, BUR),
+                             Command(FRANCE, MAR, SUPPORT, PAR),
+                             Command(FRANCE, BUR, HOLD)])
+
+    def testDiagram23(self):
+        self.isStateUpdated([Command(FRANCE, PAR, MOVE, BUR),
+                             Command(FRANCE, BUR, MOVE, MAR),
+                             Command(GERMANY, RUH, SUPPORT, PAR),
+                             Command(ITALY, MAR, MOVE, BUR)])
+
+    def testDiagram24(self):
+        self.isStateUpdated([Command(GERMANY, RUH, MOVE, BUR),
+                             Command(GERMANY, MUN, HOLD),
+                             Command(FRANCE, PAR, SUPPORT, RUH),
+                             Command(FRANCE, BUR, HOLD)])
+
+    def testDiagram25(self):
+        self.isStateUpdated([Command(GERMANY, MUN, MOVE, TYR),
+                             Command(GERMANY, RUH, MOVE, MUN),
+                             Command(GERMANY, SIL, MOVE, MUN),
+                             Command(FRANCE, TYR, MOVE, MUN),
+                             Command(FRANCE, BOH, SUPPORT, SIL)])
 
 class WanderTests(unittest.TestCase):
     def setUp(self) -> None:
