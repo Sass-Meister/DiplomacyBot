@@ -160,7 +160,7 @@ class LocEnum(Enum):
     __hash__ = Enum.__hash__
 
     def __str__(self):
-        return str(self.name).upper()
+        return str(self.name).upper().replace('_', '-')
 
     def __eq__(self, other):
         if self is None or other is None:
@@ -283,7 +283,7 @@ class Location:
         self.border = list()
 
     def __str__(self):
-        return self.name
+        return "%s (%s)" % (self.name, self.location)
 
     def addBorder(self, loc: LocEnum):
         if loc not in self.border:
