@@ -212,7 +212,7 @@ edgelist = [[LocEnum.NAT, LocEnum.CLY], [LocEnum.NAT, LocEnum.LVP], [LocEnum.NAT
             [LocEnum.LVP, LocEnum.EDI], [LocEnum.LVP, LocEnum.WAL], [LocEnum.LON, LocEnum.WAL],
             # All new
             [LocEnum.SWE, LocEnum.DEN], [LocEnum.SPA_SC, LocEnum.SPA_NC], [LocEnum.BUL_EC, LocEnum.BUL_SC],
-            [LocEnum.STP_NC, LocEnum.STP_SC]]
+            [LocEnum.STP_NC, LocEnum.STP_SC], [LocEnum.STP_SC, LocEnum.LVN]]
 
 for edge in edgelist:
     if edge[0] is edge[1]:
