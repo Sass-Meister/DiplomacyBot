@@ -317,6 +317,8 @@ async def _runcommands():
 
     await ch.send("State Updated")
 
+    await state(ch) # Print the state maybe?
+
 
 @bot.command()
 async def lock(ctx):
