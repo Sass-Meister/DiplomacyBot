@@ -259,3 +259,7 @@ def getLocation(location: LocEnum) -> Location:
         raise InvariantError("Map integrity error: lacking %s" % location)
 
     return map[location]
+
+
+def getMap() -> dict[LocEnum, Location]:
+    return map
