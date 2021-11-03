@@ -106,6 +106,29 @@ SUPPORT = ActionEnum.SUPPORT
 CONVOY = ActionEnum.CONVOY
 
 
+# Given a list of commands, a state will be returned which will allow the commands to be run against it. Fleets are
+# only placed on water, armies for coastal and inland.
+#
+# commands: A list of commands to generate the state from
+def state_from_commands(commands: list[Command]) -> State:
+    startpos = dict()
+
+    for command in commands:
+        author = command.getAuthor()
+
+        if author not in startpos:
+            startpos[author] = dict()
+
+        if getLocation(command.getCurrentLocation()).loctype == LocTypeEnum.WATER or \
+                (command.getTargetLocation() is not None and getLocation(command.getTargetLocation()).loctype == LocTypeEnum.WATER):
+            startpos[author][command.getCurrentLocation()] = FLEET
+
+        else:
+            startpos[author][command.getCurrentLocation()] = ARMY
+
+    return State(startpos)
+
+
 class MapTests(unittest.TestCase):
     def setUp(self):
         self.e = Engine(1)
@@ -175,27 +198,6 @@ class MapTests(unittest.TestCase):
 
 
 class Diagrams(unittest.TestCase):  # https://media.wizards.com/2015/downloads/ah/diplomacy_rules.pdf
-    # Given a list of commands, a state will be returned which will allow the commands to be run against it. Fleets are
-    # only placed on water, armies for coastal and inland.
-    #
-    # commands: A list of commands to generate the state from
-    def state_from_commands(self, commands: list[Command]) -> State:
-        startpos = dict()
-
-        for command in commands:
-            author = command.getAuthor()
-
-            if author not in startpos:
-                startpos[author] = dict()
-
-            loctypeset = {getLocation(command.getCurrentLocation()).loctype,
-                          None if command.getTargetLocation() is None else getLocation(
-                              command.getTargetLocation()).loctype}
-
-            startpos[author][command.getCurrentLocation()] = FLEET if LocTypeEnum.WATER in loctypeset else ARMY
-
-        return State(startpos)
-
     # Runs a list of commands along with a base state and test if the expected final state is reached.
     #
     # commands: the commands to run
@@ -203,10 +205,20 @@ class Diagrams(unittest.TestCase):  # https://media.wizards.com/2015/downloads/a
     # base_state: The base state for the commands to be tested against. If None, state_from_commands is used.
     def isStateUpdated(self, commands: list[Command], final_state: State = None, base_state: State = None):
         if base_state is None:
-            base_state = self.state_from_commands(commands)
+            base_state = state_from_commands(commands)
 
         if final_state is None:
-            final_state = self.state_from_commands(commands)
+            final_state = state_from_commands(commands)
+
+        for command in commands:
+            retreat = None
+
+            if command.retreat is not None:
+                if retreat is None:
+                    retreat = self.e.check_for_retreats(commands)
+
+                if command.unit not in retreat or command.retreat not in retreat[command.unit]:
+                    raise Exception("Failed to find retreat")
 
         self.e.state = base_state
 
@@ -221,7 +233,7 @@ class Diagrams(unittest.TestCase):  # https://media.wizards.com/2015/downloads/a
     # base_state: The base state for the commands to be tested against. If None, state_from_commands is used
     def isErrorRaised(self, test_exception: type[Exception], commands: list[Command], base_state: State = None):
         if base_state is None:
-            base_state = self.state_from_commands(commands)
+            base_state = state_from_commands(commands)
 
         self.e.state = base_state
 
@@ -229,7 +241,7 @@ class Diagrams(unittest.TestCase):  # https://media.wizards.com/2015/downloads/a
             self.e.update_state(commands.copy())
 
     def setUp(self) -> None:
-        self.e = Engine(7)
+        self.e = Engine()
 
     def testDiagram01(self):
         for loc in [PIC, BUR, GAS, BRE]:
@@ -652,7 +664,7 @@ class WanderTests(unittest.TestCase):
                 self.e.update_state([Command(FRANCE, current, MOVE, move_to)])
                 # print("Moved to %s" % move_to)
             except CommandConflict:
-                # self.assertTrue(getLocation(move_to).loctype == LocTypeEnum.INLAND)
+                #self.assertTrue(getLocation(move_to).loctype == LocTypeEnum.INLAND)
                 # print("Correctly detected an attempt to move into the water")
                 continue
 
