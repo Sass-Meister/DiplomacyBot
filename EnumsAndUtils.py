@@ -31,7 +31,7 @@
 # TODO:       __/\\\/_____\//\\\_______________\///\\\__/\\\/_____\//\\\_______________\///\\\__/\\\/_____\//\\\___
 # TODO:        _\///________\///__________________\///__\///________\///__________________\///__\///________\///___
 
-from enum import Enum, unique
+from enum import Enum
 
 
 # __/\\\\\\\\\\\\\\\____/\\\\\\\\\________/\\\\\\\\\___________/\\\\\_________/\\\\\\\\\_________/\\\\\\\\\\\_________
@@ -58,7 +58,11 @@ class RuleCheckException(Exception):
 
 
 class RetreatDetected(Exception):
-    pass
+    def __init__(self, command):
+        self.command = command
+
+    def getCommand(self):
+        return self.command
 
 # __/\\\\\\\\\\\\\\\__/\\\\\_____/\\\__/\\\________/\\\__/\\\\____________/\\\\_____/\\\\\\\\\\\_________
 #  _\/\\\///////////__\/\\\\\\___\/\\\_\/\\\_______\/\\\_\/\\\\\\________/\\\\\\___/\\\/////////\\\_______
@@ -162,17 +166,25 @@ class LocEnum(Enum):
     def __str__(self):
         return str(self.name).upper().replace('_', '-')
 
+    # How are the Specific Movement Clarifications (see the rules) implemented? Part of the magic is in this function.
+    # The issue is that different map locations have different exact locations for different units. STP, BUL, and SPA
+    # have separate coasts with different borders for Fleets. Counting sub-locations (XXX_XC) as the same as their parent
+    # location allows for more useful comparisons. If you want to test with a little more accuracy, use is to
+    # distinguish all locations and sub-locations.
     def __eq__(self, other):
-        if self is None or other is None:
-            return False
+        if not isinstance(other, LocEnum):
+            if other is None:
+                return False
 
-        if self.value == other.value:
+            raise Exception(f"Fail Fast: {other} ({type(other)}) was compared against a {type(self)}")
+
+        if self is other:
             return True
 
-        for locgoup in ({LocEnum.STP, LocEnum.STP_SC, LocEnum.STP_NC},
+        for locgroup in ({LocEnum.STP, LocEnum.STP_SC, LocEnum.STP_NC},
                         {LocEnum.BUL, LocEnum.BUL_EC, LocEnum.BUL_SC},
                         {LocEnum.SPA, LocEnum.SPA_SC, LocEnum.SPA_NC}):
-            if {self, other}.issubset(locgoup):
+            if {self, other}.issubset(locgroup):
                 return True
 
         return False
@@ -218,6 +230,14 @@ class ActionEnum(Enum):
         return str(self.name).capitalize()
 
 
+class SeasonEnum(Enum):
+    SPRING = 1
+    FALL = 1
+
+    def __str__(self):
+        return str(self.name).capitalize()
+
+
 # _____/\\\\\\\\\_____/\\\\\\\\\\\\_____/\\\\\\\\\\\\\\\_____/\\\\\\\\\\\_________
 #  ___/\\\\\\\\\\\\\__\/\\\////////\\\__\///////\\\/////____/\\\/////////\\\_______
 #   __/\\\/////////\\\_\/\\\______\//\\\_______\/\\\________\//\\\______\///________
@@ -239,20 +259,22 @@ class Country:
         self.bot = bot
 
     def __eq__(self, other):
-        if type(self) != type(other):
-            return False
+        if not isinstance(other, Country):
+            if other is None:
+                return False
+
+            raise Exception(f"Fail Fast: {other} ({type(other)}) was compared against a {type(self)}")
 
         if self is other:
             return True
 
-        if self.country != other.country:
-            return False
+        for attr in ["country", "name", "bot"]:
+            if hasattr(other, attr) and not getattr(self, attr) == getattr(other, attr):
+                return False
 
-        if self.name != other.name:
-            return False
-
-        if self.bot != other.bot:
-            return False
+        for attr in ["units", "capitals"]:
+            if not hasattr(other, attr):
+                return False
 
         if len(self.units) != len(other.units):
             return False
@@ -306,14 +328,11 @@ class Command:
         self.validate()
 
     def __eq__(self, other) -> bool:
-        if type(self) != type(other):
+        if not isinstance(other, Command):
             return False
 
         for attr in ["unit", "action", "author", "location", "dropoff", "retreat"]:
-            if not hasattr(other, attr):
-                return False
-
-            if getattr(self, attr) != getattr(other, attr):
+            if hasattr(other, attr) and not getattr(self, attr) == getattr(other, attr):
                 return False
 
         return True
@@ -352,6 +371,9 @@ class Command:
 
     def __hash__(self):
         return hash(str(self))
+
+    def copy(self):
+        return Command(self.author, self.unit, self.action, self.location, self.dropoff, self.retreat)
 
     # Takes in a string and fills out self with the data inside
     def load(self, s: str):
@@ -426,6 +448,10 @@ def count_support(audit, commandlist: list[Command]) -> int:
     return rtr
 
 
+# Sorts a list of commands by the given attribute. Useful for traversing all the commands like a map. All commands with
+# the same value for the given attribute are put into the same list. Returned is a dictionary with LocEnums for keys and
+# for values lists of Commands with that given value for that attribute. Most popular is "unit" and "location" to sort
+# commands into what unit they instruct and what unit that is being targeted respectively.
 def sort_commands(sort: str, commands: list[Command]) -> dict[LocEnum: list[Command]]:
     if len(commands) == 0:
         return dict()
@@ -450,6 +476,10 @@ def turn_to_hold(command: Command) -> Command:
     return Command(command.getAuthor(), command.getCurrentLocation(), ActionEnum.HOLD, retreat=command.retreat)
 
 
+def copy_commands(commands: list[Command]) -> list[Command]:
+    return [command.copy() for command in commands]
+
+
 # __/\\\\\\\\\\\__/\\\\\_____/\\\__/\\\\\\\\\\\\\\\__/\\\\\\\\\\\\\\\____/\\\\\\\\\______/\\\\\\\\\\\\\\\_____/\\\\\\\\\___________/\\\\\\\\\__/\\\\\\\\\\\\\\\_____/\\\\\\\\\\\_________
 #  _\/////\\\///__\/\\\\\\___\/\\\_\///////\\\/////__\/\\\///////////___/\\\///////\\\___\/\\\///////////____/\\\\\\\\\\\\\______/\\\////////__\/\\\///////////____/\\\/////////\\\_______
 #   _____\/\\\_____\/\\\/\\\__\/\\\_______\/\\\_______\/\\\_____________\/\\\_____\/\\\___\/\\\______________/\\\/////////\\\___/\\\/___________\/\\\______________\//\\\______\///________
@@ -460,7 +490,11 @@ def turn_to_hold(command: Command) -> Command:
 #        __/\\\\\\\\\\\_\/\\\___\//\\\\\_______\/\\\_______\/\\\\\\\\\\\\\\\_\/\\\______\//\\\_\/\\\_____________\/\\\_______\/\\\____\////\\\\\\\\\_\/\\\\\\\\\\\\\\\_\///\\\\\\\\\\\/____/\\\_
 #         _\///////////__\///_____\/////________\///________\///////////////__\///________\///__\///______________\///________\///________\/////////__\///////////////____\///////////_____\///__
 
-
+# What does a RuleBase look like under the hood? All RuleBases are iterators who iterate through tuples with
+# (the old Command, what to replace it with). All you must do to implement a RuleBase is write the attempt_resolve
+# function. This function takes a list of commands to which you will attempt to resolve situations and reduce from the
+# command list Commands that, if passed, would create an illegal game state. This is most often turning MOVEs to assume
+# what hase been resolved before it AKA RuleBases are resolved in a set order.
 class RuleBase:
     def __init__(self, commands: list[Command]):
         self.commands = commands
