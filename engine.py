@@ -28,6 +28,13 @@ MOVE = ActionEnum.MOVE
 SUPPORT = ActionEnum.SUPPORT
 CONVOY = ActionEnum.CONVOY
 
+ARMY = UnitEnum.ARMY
+FLEET = UnitEnum.FLEET
+
+INLAND = LocTypeEnum.INLAND
+COASTAL = LocTypeEnum.COASTAL
+WATER = LocTypeEnum.WATER
+
 
 def resolvable_move(audit: Command, commands: list[Command]) -> bool:
     if audit not in commands:
@@ -103,7 +110,7 @@ def validConvoyMove(audit: Command, commands: list[Command]) -> bool:
 
     TargetSort = sort_commands("location", commands)
 
-    node = audit # A node on the chain of convoys
+    node = audit  # A node on the chain of convoys
 
     while True:
         if node.getCurrentLocation() not in TargetSort:
@@ -139,7 +146,9 @@ class ResolveCutSupport(RuleBase):
                 for invader in TargetSort[cmd.getCurrentLocation()]:
                     if invader.getAction() == MOVE and \
                             invader.getAuthor() != cmd.getAuthor() and \
-                            (supported_cmd.getTargetLocation() != invader.getCurrentLocation() or count_support(invader, commands) > count_support(cmd, commands)):
+                            (supported_cmd.getTargetLocation() != invader.getCurrentLocation() or count_support(invader,
+                                                                                                                commands) > count_support(
+                                cmd, commands)):
                         rtr[cmd] = turn_to_hold(cmd)
                         break
 
@@ -158,12 +167,12 @@ class DetectRetreats(RuleBase):
             my_support = count_support(cmd, commands)
 
             for invader in TargetSort[cmd.getCurrentLocation()]:
-                if invader.getAction() == MOVE and count_support(invader, commands) > my_support and invader.getAuthor() != cmd.getAuthor():
+                if invader.getAction() == MOVE and count_support(invader,
+                                                                 commands) > my_support and invader.getAuthor() != cmd.getAuthor():
                     if cmd.retreat is None:
                         raise RetreatDetected(cmd)
 
                     rtr[cmd] = Command(cmd.getAuthor(), cmd.getCurrentLocation(), MOVE, cmd.retreat)
-                    print("%s is retreating" % cmd)
                     break
 
         return rtr
@@ -193,7 +202,7 @@ class ResolveMoveRetreats(RuleBase):
                 if their_support > my_support or (
                         cmd.getTargetLocation() != invader.getCurrentLocation() and their_support > 1):
                     if cmd.retreat is None:
-                        raise RetreatDetected
+                        raise RetreatDetected(cmd)
 
                     rtr[cmd] = Command(cmd.getAuthor(), cmd.getCurrentLocation(), MOVE, cmd.getRetreatLocation())
 
@@ -278,32 +287,32 @@ rules = [ResolveCutSupport,
 
 
 class Engine:
-    def __init__(self, players: int):
+    def __init__(self, players: int = 7):
         startpos = {
-                    CountryEnum.ITALY: {LocEnum.ROM: UnitEnum.ARMY,
-                                        LocEnum.VEN: UnitEnum.ARMY,
-                                        LocEnum.NAP: UnitEnum.FLEET},
-                    CountryEnum.GERMANY: {LocEnum.BER: UnitEnum.ARMY,
-                                          LocEnum.MUN: UnitEnum.ARMY,
-                                          LocEnum.KIE: UnitEnum.FLEET},
-                    CountryEnum.AUSTRIA: {LocEnum.VIE: UnitEnum.ARMY,
-                                          LocEnum.BUD: UnitEnum.ARMY,
-                                          LocEnum.TRI: UnitEnum.FLEET},
-                    CountryEnum.ENGLAND: {LocEnum.LON: UnitEnum.FLEET,
-                                          LocEnum.EDI: UnitEnum.FLEET,
-                                          LocEnum.LVP: UnitEnum.ARMY},
-                    CountryEnum.FRANCE: {LocEnum.PAR: UnitEnum.ARMY,
-                                         LocEnum.MAR: UnitEnum.ARMY,
-                                         LocEnum.BRE: UnitEnum.FLEET},
-                    CountryEnum.RUSSIA: {LocEnum.MOS: UnitEnum.ARMY,
-                                         LocEnum.SEV: UnitEnum.FLEET,
-                                         LocEnum.WAR: UnitEnum.ARMY,
-                                         LocEnum.STP_SC: UnitEnum.FLEET},
-                    CountryEnum.TURKEY: {LocEnum.ANK: UnitEnum.FLEET,
-                                         LocEnum.CON: UnitEnum.ARMY,
-                                         LocEnum.SMY: UnitEnum.ARMY}}
+            CountryEnum.ITALY: {LocEnum.ROM: UnitEnum.ARMY,
+                                LocEnum.VEN: UnitEnum.ARMY,
+                                LocEnum.NAP: UnitEnum.FLEET},
+            CountryEnum.GERMANY: {LocEnum.BER: UnitEnum.ARMY,
+                                  LocEnum.MUN: UnitEnum.ARMY,
+                                  LocEnum.KIE: UnitEnum.FLEET},
+            CountryEnum.AUSTRIA: {LocEnum.VIE: UnitEnum.ARMY,
+                                  LocEnum.BUD: UnitEnum.ARMY,
+                                  LocEnum.TRI: UnitEnum.FLEET},
+            CountryEnum.ENGLAND: {LocEnum.LON: UnitEnum.FLEET,
+                                  LocEnum.EDI: UnitEnum.FLEET,
+                                  LocEnum.LVP: UnitEnum.ARMY},
+            CountryEnum.FRANCE: {LocEnum.PAR: UnitEnum.ARMY,
+                                 LocEnum.MAR: UnitEnum.ARMY,
+                                 LocEnum.BRE: UnitEnum.FLEET},
+            CountryEnum.RUSSIA: {LocEnum.MOS: UnitEnum.ARMY,
+                                 LocEnum.SEV: UnitEnum.FLEET,
+                                 LocEnum.WAR: UnitEnum.ARMY,
+                                 LocEnum.STP_SC: UnitEnum.FLEET},
+            CountryEnum.TURKEY: {LocEnum.ANK: UnitEnum.FLEET,
+                                 LocEnum.CON: UnitEnum.ARMY,
+                                 LocEnum.SMY: UnitEnum.ARMY}}
 
-        for x in range(7-players):
+        for x in range(7 - players):
             del startpos[list(startpos.keys())[0]]
 
         self.state = State(startpos)
@@ -311,7 +320,6 @@ class Engine:
 
     def getState(self):
         return self.state
-
 
     ####################################################################################################################
     ## Checking each command against the map and the state to see if the list of commands could be rendered           ##
@@ -376,6 +384,64 @@ class Engine:
 
                         if not found:
                             raise CommandConflict("Can only move to coasts that share a water border")
+
+    # Checks the list of commands for any commands that need will require a retreat field for the state to be updated without error.
+    # Side effect: adds found retreats to nessasary comands NOT ON PURPOSE
+    def check_for_retreats(self, commands: list[Command]) -> dict[LocEnum: list[LocEnum]]:
+        self.check_commands(commands)
+
+        rtr = dict()
+        base_commands = copy_commands(commands)
+        LocSort = sort_commands("unit", commands)
+        TargetSort = sort_commands("location", commands)
+
+        for command in base_commands:
+            command.retreat = None
+
+        while True:
+            commands = base_commands
+
+            # Prep the copy of base_commands with the fixes that have already been found
+            for command in base_commands:
+                if command.getCurrentLocation() in rtr:
+                    if len(rtr[command.getCurrentLocation()]) == 0:  # An empty list signifies there are no possible retreats for this unit
+                        commands.remove(command)
+
+                    else:
+                        command.retreat = rtr[command.getCurrentLocation()][0]
+
+            # Find the next command that needs a retreat
+            current = None
+
+            try:
+                for rule in rules:
+                    for old, fixed in rule(commands):
+                        commands[commands.index(old)] = fixed
+
+            except RetreatDetected as e:
+                current = e.command.getCurrentLocation()
+
+            if current is None:
+                break
+
+            # Find all the locations that that unit could retreat to
+            rtr[current] = list()
+
+            location = getLocation(current)
+
+            for border in location.getBorders():
+                border_location = getLocation(border)
+
+                if self.state.getUnit(border) == ARMY and border_location.loctype == WATER or self.state.getUnit(
+                        border) == FLEET and border_location.loctype == INLAND:
+                    continue
+
+                if border in LocSort or border in TargetSort:
+                    continue
+
+                rtr[current].append(border)
+
+        return rtr
 
     def update_state(self, commands: list[Command]):
         if len(commands) == 0:
