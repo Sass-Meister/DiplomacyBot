@@ -135,121 +135,122 @@ class MapTests(unittest.TestCase):
 
     def testBulgariaCoast1(self):  # See: Specific Movement Clarifications
         self.e.state = State({FRANCE: {AEG: FLEET}})
-        self.e.update_state([Command(FRANCE, AEG, MOVE, BUL_SC)])
+        self.e.run_commands([Command(FRANCE, AEG, MOVE, BUL_SC)])
 
         self.assertTrue(self.e.state == State({FRANCE: {BUL_SC: FLEET}}))
 
         with self.assertRaises(CommandConflict):
-            self.e.update_state([Command(FRANCE, BUL_SC, MOVE, BLA)])
+            self.e.run_commands([Command(FRANCE, BUL_SC, MOVE, BLA)])
 
     def testBulgariaCoast2(self):  # See: Specific Movement Clarifications
         self.e.state = State({FRANCE: {BLA: FLEET}})
-        self.e.update_state([Command(FRANCE, BLA, MOVE, BUL_EC)])
+        self.e.run_commands([Command(FRANCE, BLA, MOVE, BUL_EC)])
 
         self.assertTrue(self.e.state == State({FRANCE: {BUL_EC: FLEET}}))
 
         with self.assertRaises(CommandConflict):
-            self.e.update_state([Command(FRANCE, BUL_EC, MOVE, AEG)])
+            self.e.run_commands([Command(FRANCE, BUL_EC, MOVE, AEG)])
 
     def testSpainCoast1(self):  # See: Specific Movement Clarifications
         self.e.state = State({FRANCE: {WES: FLEET}})
-        self.e.update_state([Command(FRANCE, WES, MOVE, SPA_SC)])
+        self.e.run_commands([Command(FRANCE, WES, MOVE, SPA_SC)])
 
         self.assertTrue(self.e.state == State({FRANCE: {SPA_SC: FLEET}}))
 
         with self.assertRaises(CommandConflict):
-            self.e.update_state([Command(FRANCE, SPA_SC, MOVE, MID)])
+            self.e.run_commands([Command(FRANCE, SPA_SC, MOVE, MID)])
 
     def testSpainCoast2(self):  # See: Specific Movement Clarifications
         self.e.state = State({FRANCE: {MID: FLEET}})
-        self.e.update_state([Command(FRANCE, MID, MOVE, SPA_NC)])
+        self.e.run_commands([Command(FRANCE, MID, MOVE, SPA_NC)])
 
         self.assertTrue(self.e.state == State({FRANCE: {SPA_NC: FLEET}}))
 
         with self.assertRaises(CommandConflict):
-            self.e.update_state([Command(FRANCE, SPA_NC, MOVE, WES)])
+            self.e.run_commands([Command(FRANCE, SPA_NC, MOVE, WES)])
 
     def testStPCoast1(self):  # See: Specific Movement Clarifications
         self.e.state = State({FRANCE: {BOT: FLEET}})
-        self.e.update_state([Command(FRANCE, BOT, MOVE, STP_SC)])
+        self.e.run_commands([Command(FRANCE, BOT, MOVE, STP_SC)])
 
         self.assertTrue(self.e.state == State({FRANCE: {STP_SC: FLEET}}))
 
         with self.assertRaises(CommandConflict):
-            self.e.update_state([Command(FRANCE, STP_SC, MOVE, BAR)])
+            self.e.run_commands([Command(FRANCE, STP_SC, MOVE, BAR)])
 
     def testStPCoast2(self):  # See: Specific Movement Clarifications
         self.e.state = State({FRANCE: {BAR: FLEET}})
-        self.e.update_state([Command(FRANCE, BAR, MOVE, STP_NC)])
+        self.e.run_commands([Command(FRANCE, BAR, MOVE, STP_NC)])
 
         self.assertTrue(self.e.state == State({FRANCE: {STP_NC: FLEET}}))
 
         with self.assertRaises(CommandConflict):
-            self.e.update_state([Command(FRANCE, STP_NC, MOVE, BOT)])
+            self.e.run_commands([Command(FRANCE, STP_NC, MOVE, BOT)])
 
     def testSWEtoDEN(self):
         for start, end in ((SWE, DEN), (DEN, SWE)):
             for unit in (FLEET, ARMY):
                 self.e.state = State({FRANCE: {start: unit}})
 
-                self.e.update_state([Command(FRANCE, start, MOVE, end)])
+                self.e.run_commands([Command(FRANCE, start, MOVE, end)])
 
                 self.assertTrue(self.e.state == State({FRANCE: {end: unit}}))
 
 
 class Diagrams(unittest.TestCase):  # https://media.wizards.com/2015/downloads/ah/diplomacy_rules.pdf
+    def addCapitalsToState(self, state: State, capitals: dict[CountryEnum, list[LocEnum]]):
+        for cenum, country in state.state.items():
+            if cenum in capitals:
+                for province in capitals[cenum]:
+                    country.capitals.append(province)
+
     # Runs a list of commands along with a base state and test if the expected final state is reached.
     #
     # commands: the commands to run
     # final_state: The final stat expected after the commands have been run. If None, state_from_commands is used.
     # base_state: The base state for the commands to be tested against. If None, state_from_commands is used.
-    def isStateUpdated(self, commands: list[Command], final_state: State = None, base_state: State = None):
-        if base_state is None:
-            base_state = state_from_commands(commands)
+    def isStateUpdated(self,
+                       commands: list[Command],
+                       final_state: dict[CountryEnum, dict[LocEnum, UnitEnum]] = None,
+                       base_state: dict[CountryEnum, dict[LocEnum, UnitEnum]] = None,
+                       final_capitals: dict[CountryEnum, list[LocEnum]] = None):
 
-        if final_state is None:
-            final_state = state_from_commands(commands)
+        self.e.state = state_from_commands(commands) if base_state is None else State(base_state)
 
-        for command in commands:
-            retreat = None
+        final_state = state_from_commands(commands) if final_state is None else State(final_state)
 
-            if command.retreat is not None:
-                if retreat is None:
-                    retreat = self.e.check_for_retreats(commands)
+        if final_capitals is not None:
+            self.addCapitalsToState(final_state, final_capitals)
 
-                if command.unit not in retreat or command.retreat not in retreat[command.unit]:
-                    raise Exception("Failed to find retreat")
-
-        self.e.state = base_state
-
-        self.e.update_state(commands)
+        self.e.run_commands(commands)
 
         self.assertTrue(self.e.state == final_state)
 
     # Runs a list of commands along with a base state to test if the provided exception is raised.
     #
-    # test_exception: The exception expected to be raised when update_state is ran with these commands
+    # test_exception: The exception expected to be raised when run_commands is ran with these commands
     # commands: The commands as an array of Command objects
     # base_state: The base state for the commands to be tested against. If None, state_from_commands is used
-    def isErrorRaised(self, test_exception: type[Exception], commands: list[Command], base_state: State = None):
-        if base_state is None:
-            base_state = state_from_commands(commands)
-
-        self.e.state = base_state
+    def isErrorRaised(self, test_exception: type[Exception], commands: list[Command], base_state: dict[CountryEnum, dict[LocEnum, UnitEnum]] = None):
+        self.e.state = state_from_commands(commands) if base_state is None else State(base_state)
 
         with self.assertRaises(test_exception):
-            self.e.update_state(commands.copy())
+            self.e.run_commands(commands.copy())
 
     def setUp(self) -> None:
         self.e = Engine()
 
     def testDiagram01(self):
         for loc in [PIC, BUR, GAS, BRE]:
-            self.isStateUpdated([Command(FRANCE, PAR, MOVE, loc)], State({FRANCE: {loc: ARMY}}))
+            self.isStateUpdated([Command(FRANCE, PAR, MOVE, loc)], {FRANCE: {loc: ARMY}}, final_capitals={FRANCE: [PAR]})
 
     def testDiagram02(self):
         for loc in [IRI, WAL, LON, NTH, BEL, PIC, BRE, MID]:
-            self.isStateUpdated([Command(FRANCE, ENG, MOVE, loc)], State({FRANCE: {loc: FLEET}}))
+            if getLocation(loc).iscapital:
+                self.isStateUpdated([Command(FRANCE, ENG, MOVE, loc)], {FRANCE: {loc: FLEET}}, final_capitals={FRANCE: [loc]})
+
+            else:
+                self.isStateUpdated([Command(FRANCE, ENG, MOVE, loc)], {FRANCE: {loc: FLEET}})
 
     def testDiagram03(self):
         basestate = State({FRANCE: {ROM: FLEET}})
@@ -636,7 +637,7 @@ class WanderTests(unittest.TestCase):
             move_to = random.choice(loc.border)
 
             try:
-                self.e.update_state([Command(FRANCE, current, MOVE, move_to)])
+                self.e.run_commands([Command(FRANCE, current, MOVE, move_to)])
                 # print("Moved to %s" % move_to)
             except CommandConflict:
                 self.assertTrue(getLocation(move_to).loctype == LocTypeEnum.WATER)
@@ -661,7 +662,7 @@ class WanderTests(unittest.TestCase):
             move_to = random.choice(loc.border)
 
             try:
-                self.e.update_state([Command(FRANCE, current, MOVE, move_to)])
+                self.e.run_commands([Command(FRANCE, current, MOVE, move_to)])
                 # print("Moved to %s" % move_to)
             except CommandConflict:
                 #self.assertTrue(getLocation(move_to).loctype == LocTypeEnum.INLAND)
@@ -685,7 +686,7 @@ class Singles(unittest.TestCase):
 
         command = [Command(FRANCE, BEL, HOLD)]
 
-        self.e.update_state(command)
+        self.e.run_commands(command)
 
         self.assertTrue(self.e.state == oldstate)
 
@@ -694,7 +695,7 @@ class Singles(unittest.TestCase):
 
         command = [Command(FRANCE, BEL, MOVE, HOL)]
 
-        self.e.update_state(command)
+        self.e.run_commands(command)
 
         self.assertTrue(self.e.state == State({FRANCE: {HOL: ARMY}}))
 
@@ -703,7 +704,7 @@ class Singles(unittest.TestCase):
 
         command = [Command(FRANCE, NTH, MOVE, NRG)]
 
-        self.e.update_state(command)
+        self.e.run_commands(command)
 
         self.assertTrue(self.e.state == State({FRANCE: {NRG: FLEET}}))
 
@@ -712,7 +713,7 @@ class Singles(unittest.TestCase):
 
         command = [Command(FRANCE, NTH, MOVE, HOL)]
 
-        self.e.update_state(command)
+        self.e.run_commands(command)
 
         self.assertTrue(self.e.state == State({FRANCE: {HOL: FLEET}}))
 
@@ -721,7 +722,7 @@ class Singles(unittest.TestCase):
 
         command = [Command(FRANCE, HOL, MOVE, NTH)]
 
-        self.e.update_state(command)
+        self.e.run_commands(command)
 
         self.assertTrue(self.e.state == State({FRANCE: {NTH: FLEET}}))
 
@@ -736,7 +737,7 @@ class Duos(unittest.TestCase):
         commands = [Command(FRANCE, BEL, MOVE, HOL),
                     Command(GERMANY, HOL, MOVE, BEL)]
 
-        self.e.update_state(commands)
+        self.e.run_commands(commands)
 
         self.assertTrue(self.e.state == State({FRANCE: {BEL: ARMY}, GERMANY: {HOL: ARMY}}))
 
@@ -748,7 +749,7 @@ class Duos(unittest.TestCase):
         commands = [Command(FRANCE, HOL, MOVE, BEL),
                     Command(GERMANY, RUH, MOVE, BEL)]
 
-        self.e.update_state(commands)
+        self.e.run_commands(commands)
 
         self.assertTrue(self.e.state == oldstate)
 
@@ -759,7 +760,7 @@ class Duos(unittest.TestCase):
         commands = [Command(FRANCE, HOL, MOVE, BEL),
                     Command(GERMANY, BEL, MOVE, RUH)]
 
-        self.e.update_state(commands)
+        self.e.run_commands(commands)
 
         self.assertTrue(self.e.state == State({FRANCE: {BEL: ARMY},
                                                GERMANY: {RUH: ARMY}}))
@@ -778,7 +779,7 @@ class Trios(unittest.TestCase):
                     Command(GERMANY, HOL, MOVE, RUH),
                     Command(ITALY, RUH, MOVE, BEL)]
 
-        self.e.update_state(commands)
+        self.e.run_commands(commands)
 
         self.assertTrue(self.e.state == State({FRANCE: {HOL: ARMY},
                                                GERMANY: {RUH: ARMY},
