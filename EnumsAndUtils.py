@@ -64,6 +64,7 @@ class RetreatDetected(Exception):
     def getCommand(self):
         return self.command
 
+
 # __/\\\\\\\\\\\\\\\__/\\\\\_____/\\\__/\\\________/\\\__/\\\\____________/\\\\_____/\\\\\\\\\\\_________
 #  _\/\\\///////////__\/\\\\\\___\/\\\_\/\\\_______\/\\\_\/\\\\\\________/\\\\\\___/\\\/////////\\\_______
 #   _\/\\\_____________\/\\\/\\\__\/\\\_\/\\\_______\/\\\_\/\\\//\\\____/\\\//\\\__\//\\\______\///________
@@ -182,8 +183,8 @@ class LocEnum(Enum):
             return True
 
         for locgroup in ({LocEnum.STP, LocEnum.STP_SC, LocEnum.STP_NC},
-                        {LocEnum.BUL, LocEnum.BUL_EC, LocEnum.BUL_SC},
-                        {LocEnum.SPA, LocEnum.SPA_SC, LocEnum.SPA_NC}):
+                         {LocEnum.BUL, LocEnum.BUL_EC, LocEnum.BUL_SC},
+                         {LocEnum.SPA, LocEnum.SPA_SC, LocEnum.SPA_NC}):
             if {self, other}.issubset(locgroup):
                 return True
 
@@ -231,11 +232,16 @@ class ActionEnum(Enum):
 
 
 class SeasonEnum(Enum):
-    SPRING = 1
+    SPRING = 0
     FALL = 1
 
     def __str__(self):
         return str(self.name).capitalize()
+
+
+class GainLoseEnum(Enum):
+    GAIN = 0
+    LOSE = 1
 
 
 # _____/\\\\\\\\\_____/\\\\\\\\\\\\_____/\\\\\\\\\\\\\\\_____/\\\\\\\\\\\_________
@@ -250,7 +256,7 @@ class SeasonEnum(Enum):
 
 
 class Country:
-    def __init__(self, country: CountryEnum, name: str = None, units: dict = None, capitals: list = None,
+    def __init__(self, country: CountryEnum, name: str = None, units: dict[LocEnum: UnitEnum] = None, capitals: list[LocEnum] = None,
                  bot: bool = False):
         self.country = country
         self.name = name if name is not None else str(country)
@@ -409,6 +415,7 @@ class Command:
         if self.retreat is not None and type(self.retreat) != LocEnum:
             raise InvariantError("Retreat is of the wrong type")
 
+
 # __/\\\________/\\\__/\\\\\\\\\\\\\\\__/\\\\\\\\\\\__/\\\_________________/\\\\\\\\\\\_________
 #  _\/\\\_______\/\\\_\///////\\\/////__\/////\\\///__\/\\\_______________/\\\/////////\\\_______
 #   _\/\\\_______\/\\\_______\/\\\___________\/\\\_____\/\\\______________\//\\\______\///________
@@ -420,7 +427,7 @@ class Command:
 #         ____\/////////___________\///________\///////////__\///////////////____\///////////_____\///__
 
 
-def clense(s: str) -> str:
+def cleanse(s: str) -> str:
     for c in [' ', '\t', '\n']:
         s = s.replace(c, '')
 
@@ -517,5 +524,3 @@ class RuleBase:
 
     def __str__(self):
         return str(type(self))
-
-
