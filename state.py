@@ -8,7 +8,7 @@
 # TODO:       _______\/\\\__________\///\\\\\/_____\/\\\\\\\\\\\\/______\///\\\\\/______/\\\_
 # TODO:        _______\///_____________\/////_______\////////////__________\/////_______\///__
 
-# update_state
+# run_commands
 
 # Update capitals needs to be rewritten to not give claim to the same capital to multiple countries. This could also be
 # solved differently by using the old state to know what capitals counties claim beyond where their current units lie.
@@ -45,20 +45,77 @@ class State:
                     state[country].capitals.append(province)
 
         self.state = state
+        self.season = SeasonEnum.SPRING
+        self.year = 1901
 
         self.verify_state()
 
-    # Takes capitals from an old state and adds them to the current state. Used to persist capitals after each spring.
-    def update_capitals(self, oldstate):
-        oldstate = oldstate.state
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, State):
+            if other is not None:
+                raise Exception("Fail Fast")
 
-        for country in oldstate:
-            if country not in self.state:
-                self.state[country] = Country(country)
+            return False
 
-            for province in oldstate[country].capitals:
-                if province not in self.state[country].capitals:
-                    self.state[country].capitals.append(province)
+        if self is other:
+            return True
+
+        if len(self.state) != len(other.state):
+            return False
+
+        for country in self.state:
+            if country not in other.state or self.state[country] != other.state[country]:
+                return False
+
+        if self.season != other.season:
+            return False
+
+        if self.year != other.year:
+            return False
+
+        return True
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __str__(self):
+        rtr = ""
+
+        for country in self.state:
+            rtr = "%s%s has:\n" % (rtr, country)
+
+            for loc in self.state[country].units:
+                rtr = "%s\t%s in %s\n" % (rtr, self.state[country].units[loc], getLocation(loc))
+
+        return rtr
+
+    # Returns the country object for a given country enum
+    def getCountry(self, country: CountryEnum) -> Country:
+        return self.state[country] if country in self.state else None
+
+    # Returns a dictionary with k/v pairs of the province and unit type respectivly
+    # Who belongs to which state is not included
+    def getAllUnits(self) -> dict[LocEnum: UnitEnum]:
+        rtr = dict()
+
+        for country in self.state:
+            rtr.update(self.state[country].units)
+
+        return rtr
+
+    def getUnit(self, loc: LocEnum) -> UnitEnum:
+        for country in self.state:
+            if loc in self.state[country].units:
+                return self.state[country].units[loc]
+
+        return None
+
+    # Returns all currently playing countries
+    def getCountries(self) -> list[CountryEnum]:
+        return list(self.state.keys())
+
+    def getSeason(self):
+        return self.season
 
     def verify_state(self):
         unitcnt = 0
@@ -87,55 +144,72 @@ class State:
                 unitcnt = unitcnt + 1
 
         if unitcnt > 34:
-            raise Exception("Too many units")
+            raise InvariantError("Too many units")
 
-    def __eq__(self, other) -> bool:
-        if type(self) != type(other):
-            return False
+    def update_state(self, newpos: dict[CountryEnum, dict[LocEnum, UnitEnum]], increase_year: bool = False):
+        newstate = dict()
+        claimedcapitals = list()
 
-        if self is other:
-            return True
+        # Construct all the new country objects
+        for country in newpos:
+            newstate[country] = Country(country)
 
-        if len(self.state) != len(other.state):
-            return False
+            for province in newpos[country]:
+                newstate[country].units[province] = newpos[country][province]
 
-        for country in self.state:
-            if country not in other.state or self.state[country] != other.state[country]:
-                return False
+                if getLocation(province).iscapital:
+                    newstate[country].capitals.append(province)
+                    claimedcapitals.append(province)
 
-        return True
+        # Preserve the old capitals
+        for ckey, country in self.state.items():
+            for province in country.capitals:
+                if province not in claimedcapitals:
+                    newstate[ckey].capitals.append(province)
 
-    def __ne__(self, other):
-        return not self.__eq__(other)
+        if increase_year:
+            if self.season == SeasonEnum.FALL:
+                self.year = self.year + 1
+                self.season = SeasonEnum.SPRING
 
-    def __str__(self):
-        rtr = ""
+            else:
+                self.season = SeasonEnum.FALL
 
-        for country in self.state:
-            rtr = "%s%s has:\n" % (rtr, country)
+        self.state = newstate
 
-            for loc in self.state[country].units:
-                rtr = "%s\t%s in %s\n" % (rtr, self.state[country].units[loc], getLocation(loc))
+        self.verify_state()
 
-        return rtr
+    # Given a country, returns a tuple of the number of new units that could be placed and where they could go. Used during the gaining and losing units phase.
+    def check_gains(self, country: CountryEnum) -> (int, list[LocEnum]):
+        country = self.getCountry(country)
 
-    # Returns the country object for a given country enum
-    def getCountry(self, country: CountryEnum) -> Country:
-        return self.state[country] if country in self.state else None
+        if len(country.units) >= len(country.capitals):
+            return 0, []
 
-    # Returns a dictionary with k/v pairs of the province and unit type respectivly
-    # Who belongs to which state is not included
-    def getAllUnits(self):
-        rtr = dict()
+        capitals = set(country.capitals)
+        unit_locations = set(country.units.keys())
 
-        for country in self.state:
-            rtr.update(self.state[country].units)
+        spots = list(capitals.difference(unit_locations))
 
-        return rtr
+        gains = len(country.capitals) - len(country.units)
 
-    def getUnit(self, loc: LocEnum) -> UnitEnum:
-        for country in self.state:
-            if loc in self.state[country].units:
-                return self.state[country].units[loc]
+        occupied_capitals = len(capitals.intersection(unit_locations))
 
-        return None
+        if len(country.capitals) - occupied_capitals < gains:
+            gains = len(country.capitals) - occupied_capitals
+
+        return gains, spots
+
+    # Given a country, returns a tuple of the number of the number of units to remove and the locations where they could be removed from. Used during the gaining and losing units phase.--
+    def check_losses(self, country: CountryEnum) -> (int, list[LocEnum]):
+        country = self.getCountry(country)
+
+        if len(country.units) < len(country.capitals):
+            return 0, []
+
+        return len(country.units) - len(country.capitals), country.units.copy()
+
+
+
+
+
