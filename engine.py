@@ -321,6 +321,9 @@ class Engine:
     def getState(self):
         return self.state
 
+    def getSeason(self):
+        return self.state.getSeason()
+
     ####################################################################################################################
     ## Checking each command against the map and the state to see if the list of commands could be rendered           ##
     ####################################################################################################################
@@ -388,6 +391,8 @@ class Engine:
     # Checks the list of commands for any commands that need will require a retreat field for the state to be updated without error.
     # Side effect: adds found retreats to nessasary comands NOT ON PURPOSE
     def check_for_retreats(self, commands: list[Command]) -> dict[LocEnum: list[LocEnum]]:
+        commands = copy_commands(commands)
+
         self.check_commands(commands)
 
         rtr = dict()
@@ -443,9 +448,11 @@ class Engine:
 
         return rtr
 
-    def update_state(self, commands: list[Command]):
+    def run_commands(self, commands: list[Command]):
         if len(commands) == 0:
             return
+
+        commands = copy_commands(commands)
 
         self.check_commands(commands)
 
@@ -457,18 +464,30 @@ class Engine:
 
         # At this point all commands are now in fixed and are ready to construct a new state
 
-        startpos = dict()  # First construct the new startpos
+        newpos = dict()  # First construct the new startpos
 
         for command in commands:
-            if command.getAuthor() not in startpos:
-                startpos[command.getAuthor()] = dict()
+            if command.getAuthor() not in newpos:
+                newpos[command.getAuthor()] = dict()
 
             if command.getAction() == MOVE:
-                startpos[command.getAuthor()][command.getTargetLocation()] = self.state.getUnit(
-                    command.getCurrentLocation())
+                newpos[command.getAuthor()][command.getTargetLocation()] = self.state.getUnit(command.getCurrentLocation())
 
             else:
-                startpos[command.getAuthor()][command.getCurrentLocation()] = self.state.getUnit(
-                    command.getCurrentLocation())
+                newpos[command.getAuthor()][command.getCurrentLocation()] = self.state.getUnit(command.getCurrentLocation())
 
-        self.state = State(startpos)  # Construct the new state and set it to self
+        self.state.update_state(newpos, True)  # Update state and increase the year
+
+    def check_gain_lose(self) -> dict[CountryEnum: GainLoseEnum]:
+        rtr = dict()
+
+        for cenum in self.state.getCountries():
+            if self.state.check_gains(cenum)[0] > 0:
+                rtr[cenum] = GainLoseEnum.GAIN
+
+            elif self.state.check_losses(cenum)[0] > 0:
+                rtr[cenum] = GainLoseEnum.LOSS
+
+        return rtr
+
+
